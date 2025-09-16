@@ -6,7 +6,7 @@ def generate_quiz(topic, num_questions=5):
     """
     Generate a quiz on the given topic using Gemini 2.5 API and return as JSON.
     """
-    GEMINI_API_KEY = "AIzaSyDOBRDWX6MnYNhsVbbI7nJ9xmX1D67nqQU"
+    GEMINI_API_KEY = "Your api key"
     genai.configure(api_key=GEMINI_API_KEY)
 
     configuration = {
