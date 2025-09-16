@@ -1,4 +1,15 @@
 Steps to test/run the program.
+
+0   create a .env fike in the root directory of BACKEND and paste the following code
+    # MongoDB Configuration
+    MONGODB_URI="mongodb+srv://Brave:Ug1mbn5T8ALfHLgS@auth.fzjv1an.mongodb.net/"
+    MONGO_DB_NAME="Auth"
+
+    # JWT (JSON Web Token) Configuration
+    JWT_SECRET_KEY="c891b7e4a187b629088a2a05d8091a18c8b4a24208a0d2a84e3a097d91e63a1f"
+    JWT_ALGORITHM="HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES="60"
+    
 1   run main.py
 2   press ctrl+shift+`
 3   in new terminal run -> python -m http.server 8080 --directory public
