@@ -37,6 +37,10 @@ document.addEventListener('DOMContentLoaded', () => {
             phone: $('signup-phone').value.trim(),
             email: $('signup-email').value.trim(),
             password: $('signup-password').value,
+            school_name: $('signup-school-name').value.trim(),
+            school_code: $('signup-school-code').value.trim(),
+            state: $('signup-state').value.trim(),
+            district: $('signup-district').value.trim(),
         };
         try{
             const res = await fetch(BACKEND_URL + '/signup', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
@@ -101,6 +105,12 @@ $('user-email').innerText = data.email;
 $('user-phone').innerText = data.phone;
 $('user-age').innerText = 'Age: ' + data.age;
 $('karma-value').innerText = data.karma_points;
+$('user-school-name').innerText = 'School: ' + (data.school_name || '-');
+$('user-school-code').innerText = 'School Code: ' + (data.school_code || '-');
+$('user-state').innerText = 'State: ' + (data.state || '-');
+$('user-district').innerText = 'District: ' + (data.district || '-');
+$('user-streak').innerText = 'Learning Streak: ' + (data.learning_streak || 0);
+$('user-login-dates').innerText = 'Login Dates: ' + (Array.isArray(data.login_dates) ? data.login_dates.join(', ') : '-');
 show('view-dashboard');
 }catch(err){ setMsg('Could not fetch profile: ' + err.message, false); token.del(); show('view-login'); }
 }

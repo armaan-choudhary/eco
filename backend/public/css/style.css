@@ -8,13 +8,16 @@ p.lead{margin:0 0 18px;color:var(--muted)}
 .columns{display:flex;gap:20px}
 .col{flex:1}
 label{display:block;margin:8px 0 6px;font-size:13px}
-input[type=text], input[type=password], input[type=number], input[type=email], select{width:100%;padding:10px;border-radius:8px;border:1px solid #e3e7e4}
+input[type=text], input[type=password], input[type=number], input[type=email], select{width:100%;padding:10px;border-radius:8px;border:1px solid #e3e7e4;margin-bottom:10px}
 button{background:var(--accent);color:white;border:0;padding:10px 14px;border-radius:10px;cursor:pointer}
-.muted{color:var(--muted);font-size:13px}
+.muted{color:var(--muted);font-size:13px;margin-bottom:4px}
 .row{display:flex;gap:10px}
 .small{font-size:13px}
 .link{color:var(--accent);cursor:pointer;text-decoration:underline}
 @media(max-width:780px){.columns{flex-direction:column}}
+
+/* Extra spacing for dashboard info blocks */
+#profile-block > div { margin-bottom: 6px; }
 .msg{padding:10px;border-radius:8px;margin:10px 0}
 .msg.error{background:#fff0f0;color:#7a1b1b;border:1px solid #f1c0c0}
 .msg.ok{background:#f0fff4;color:#075e28;border:1px solid #bfe8c9}

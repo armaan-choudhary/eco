@@ -24,37 +24,44 @@
 <div id="view-signup" style="display:none">
 <h2>Signup</h2>
 <div class="columns">
-<div class="col">
-<label>Full name</label>
-<input id="signup-name" type="text" placeholder="Abhay Kumar" />
+	<div class="col">
+		<label>Full name</label>
+		<input id="signup-name" type="text" placeholder="Abhay Kumar" />
 
+		<label>Age</label>
+		<input id="signup-age" type="number" placeholder="21" />
 
-<label>Age</label>
-<input id="signup-age" type="number" placeholder="21" />
+		<label>Gender</label>
+		<select id="signup-gender">
+			<option value="">Prefer not to say</option>
+			<option value="male">Male</option>
+			<option value="female">Female</option>
+			<option value="other">Other</option>
+		</select>
 
+		<label>School Name</label>
+		<input id="signup-school-name" type="text" placeholder="Govt. Senior Secondary School" />
 
-<label>Gender</label>
-<select id="signup-gender">
-<option value="">Prefer not to say</option>
-<option value="male">Male</option>
-<option value="female">Female</option>
-<option value="other">Other</option>
-</select>
-</div>
+		<label>School Code</label>
+		<input id="signup-school-code" type="text" placeholder="PB123456" />
+	</div>
 
+	<div class="col">
+		<label>State</label>
+		<input id="signup-state" type="text" placeholder="Punjab" />
 
-<div class="col">
-<label>Phone (E.164-ish)</label>
-<input id="signup-phone" type="text" placeholder="+919876543210" />
+		<label>District</label>
+		<input id="signup-district" type="text" placeholder="Ludhiana" />
 
+		<label>Phone (E.164-ish)</label>
+		<input id="signup-phone" type="text" placeholder="+919999999999" />
 
-<label>Email</label>
-<input id="signup-email" type="email" placeholder="you@example.com" />
+		<label>Email</label>
+		<input id="signup-email" type="email" placeholder="you@example.com" />
 
-
-<label>Password (min 8 chars)</label>
-<input id="signup-password" type="password" placeholder="strongpassword" />
-</div>
+		<label>Password (min 8 chars)</label>
+		<input id="signup-password" type="password" placeholder="strongpassword" />
+	</div>
 </div>
 <div style="margin-top:12px">
 <button id="btn-signup">Create Account</button>
@@ -74,6 +81,14 @@
 <div class="muted small" id="user-email">email</div>
 <div class="muted small" id="user-phone">phone</div>
 <div class="muted small" id="user-age">age</div>
+</div>
+<div style="margin-top:12px">
+	<div class="muted small" id="user-school-name">School: </div>
+	<div class="muted small" id="user-school-code">School Code: </div>
+	<div class="muted small" id="user-state">State: </div>
+	<div class="muted small" id="user-district">District: </div>
+	<div class="muted small" id="user-streak">Learning Streak: </div>
+	<div class="muted small" id="user-login-dates">Login Dates: </div>
 </div>
 <div style="margin-top:12px" class="row">
 <input id="karma-delta" type="number" placeholder="+10 or -5" style="width:130px" />

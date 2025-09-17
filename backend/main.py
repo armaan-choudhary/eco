@@ -113,6 +113,8 @@ GenderT = Annotated[Optional[str], Field(max_length=20)]
 PhoneT = Annotated[str, Field(pattern=r"^\+?[0-9]{7,15}$")]
 PasswordT = Annotated[str, Field(min_length=8)]
 
+
+# --- Extended UserCreate for school and location ---
 class UserCreate(BaseModel):
     name: NameT
     age: Annotated[int, Field(ge=3, le=120)]
@@ -120,6 +122,10 @@ class UserCreate(BaseModel):
     phone: PhoneT
     email: EmailStr
     password: PasswordT
+    school_name: Annotated[str, Field(min_length=1, max_length=100)]
+    school_code: Annotated[str, Field(min_length=1, max_length=50)]
+    state: Annotated[str, Field(min_length=1, max_length=50)]
+    district: Annotated[str, Field(min_length=1, max_length=50)]
 
     # Pydantic v2 field validators
     @field_validator("name")
@@ -144,6 +150,8 @@ class UserCreate(BaseModel):
             raise ValueError("password must be at least 8 characters")
         return v
 
+
+# --- Extended UserOut for school, location, streak, login_dates ---
 class UserOut(BaseModel):
     id: str
     name: str
@@ -152,6 +160,12 @@ class UserOut(BaseModel):
     phone: str
     email: EmailStr
     karma_points: int
+    school_name: str
+    school_code: str
+    state: str
+    district: str
+    learning_streak: int
+    login_dates: list[str]
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -168,6 +182,8 @@ class KarmaUpdate(BaseModel):
 # --------------------------
 # MongoDB helper
 # --------------------------
+
+# --- Extended user_helper ---
 def user_helper(user_doc) -> dict:
     return {
         "id": str(user_doc["_id"]),
@@ -177,6 +193,12 @@ def user_helper(user_doc) -> dict:
         "phone": user_doc["phone"],
         "email": user_doc["email"],
         "karma_points": int(user_doc.get("karma_points", 0)),
+        "school_name": user_doc.get("school_name", ""),
+        "school_code": user_doc.get("school_code", ""),
+        "state": user_doc.get("state", ""),
+        "district": user_doc.get("district", ""),
+        "learning_streak": int(user_doc.get("learning_streak", 0)),
+        "login_dates": [str(d) for d in user_doc.get("login_dates", [])],
     }
 
 # --------------------------
@@ -232,6 +254,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 # --------------------------
 # Routes
 # --------------------------
+
+# --- Extended signup to include school/location and streak fields ---
 @app.post("/signup", response_model=UserOut, status_code=201)
 async def signup(user: UserCreate):
     hashed_pwd = hash_password(user.password)
@@ -244,6 +268,12 @@ async def signup(user: UserCreate):
         "password": hashed_pwd,
         "karma_points": 0,
         "created_at": datetime.utcnow(),
+        "school_name": user.school_name,
+        "school_code": user.school_code,
+        "state": user.state,
+        "district": user.district,
+        "learning_streak": 0,
+        "login_dates": [],
     }
     try:
         result = await app.db.users.insert_one(user_doc)
@@ -258,6 +288,8 @@ async def signup(user: UserCreate):
     created = await app.db.users.find_one({"_id": result.inserted_id})
     return user_helper(created)
 
+
+# --- Extended login to update login_dates and learning_streak ---
 @app.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest):
     user_doc = await app.db.users.find_one({"email": payload.email.lower()})
@@ -265,6 +297,29 @@ async def login(payload: LoginRequest):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not verify_password(payload.password, user_doc["password"]):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+
+    # --- Learning streak logic ---
+    today = datetime.utcnow().date()
+    login_dates = [datetime.strptime(d, "%Y-%m-%d").date() if isinstance(d, str) else d.date() for d in user_doc.get("login_dates", [])]
+    if today not in login_dates:
+        login_dates.append(today)
+        login_dates = sorted(set(login_dates))
+    # Calculate streak: consecutive days up to today
+    streak = 0
+    for i in range(len(login_dates)-1, -1, -1):
+        if (today - login_dates[i]).days == streak:
+            streak += 1
+        else:
+            break
+    # Update user in DB
+    await app.db.users.update_one(
+        {"_id": user_doc["_id"]},
+        {"$set": {
+            "login_dates": [d.strftime("%Y-%m-%d") for d in login_dates],
+            "learning_streak": streak
+        }}
+    )
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token = create_access_token(data={"user_id": str(user_doc["_id"]), "email": user_doc["email"]}, expires_delta=access_token_expires)
     return TokenResponse(access_token=token, expires_in=int(access_token_expires.total_seconds()))
