@@ -8,16 +8,17 @@
 </head>
 <body>
 <div id="view-login">
-<input id="login-email" type="email" placeholder="you@example.com" />
-<label>Password</label>
-<input id="login-password" type="password" placeholder="your password" />
-<div style="margin-top:12px">
-<button id="btn-login">Login</button>
-</div>
-<div style="margin-top:8px">
-    <button id="btn-show-signup" type="button">Sign up</button>
-</div>
-<p class="small muted">Tip: after login you'll be redirected to the dashboard. Tokens are stored in localStorage (ok for dev only).</p>
+	<label>Email</label>
+	<input id="login-email" type="email" placeholder="you@example.com" />
+	<label>Password</label>
+	<input id="login-password" type="password" placeholder="your password" />
+	<div style="margin-top:12px">
+		<button id="btn-login">Login</button>
+	</div>
+	<div style="margin-top:8px">
+		<button id="btn-show-signup" type="button">Sign up</button>
+	</div>
+	<p class="small muted">Tip: after login you'll be redirected to the dashboard. Tokens are stored in localStorage (ok for dev only).</p>
 </div>
 
 
@@ -39,28 +40,32 @@
 			<option value="other">Other</option>
 		</select>
 
-		<label>School Name</label>
-		<input id="signup-school-name" type="text" placeholder="Govt. Senior Secondary School" />
-
-		<label>School Code</label>
-		<input id="signup-school-code" type="text" placeholder="PB123456" />
 	</div>
 
 	<div class="col">
 		<label>State</label>
-		<input id="signup-state" type="text" placeholder="Punjab" />
+		<select id="signup-state">
+			<option value="Punjab">Punjab</option>
+		</select>
 
 		<label>District</label>
-		<input id="signup-district" type="text" placeholder="Ludhiana" />
+		<select id="signup-district">
+			<option value="">Select district</option>
+		</select>
 
-		<label>Phone (E.164-ish)</label>
-		<input id="signup-phone" type="text" placeholder="+919999999999" />
+	<label>Phone (E.164-ish)</label>
+	<input id="signup-phone" type="text" placeholder="+919999999999" />
 
-		<label>Email</label>
-		<input id="signup-email" type="email" placeholder="you@example.com" />
+	<label>Email</label>
+	<input id="signup-email" type="email" placeholder="you@example.com" />
 
-		<label>Password (min 8 chars)</label>
-		<input id="signup-password" type="password" placeholder="strongpassword" />
+	<label>Password (min 8 chars)</label>
+	<input id="signup-password" type="password" placeholder="strongpassword" />
+
+		<label>School</label>
+		<select id="signup-school-id">
+			<option value="">Select your school</option>
+		</select>
 	</div>
 </div>
 <div style="margin-top:12px">
@@ -83,6 +88,11 @@
 <div class="muted small" id="user-age">age</div>
 </div>
 <div style="margin-top:12px">
+	<div class="muted small" id="user-role">Role: </div>
+	<div class="muted small" id="user-leaderboard">Leaderboard Rank: </div>
+	<div class="muted small" id="user-badges">Badges: <span id="badges-list"></span></div>
+</div>
+<div style="margin-top:12px">
 	<div class="muted small" id="user-school-name">School: </div>
 	<div class="muted small" id="user-school-code">School Code: </div>
 	<div class="muted small" id="user-state">State: </div>
@@ -91,8 +101,6 @@
 	<div class="muted small" id="user-login-dates">Login Dates: </div>
 </div>
 <div style="margin-top:12px" class="row">
-<input id="karma-delta" type="number" placeholder="+10 or -5" style="width:130px" />
-<button id="btn-karma">Update Karma</button>
 <button id="btn-logout" class="btn-logout">Logout</button>
 </div>
 </div>

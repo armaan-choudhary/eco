@@ -1,4 +1,3 @@
-
 # main.py
 import os
 from datetime import datetime, timedelta
@@ -21,8 +20,8 @@ from pymongo import MongoClient
 # --------------------------
 # Configuration (env vars)
 # --------------------------
-MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb+srv://Brave:Ug1mbn5T8ALfHLgS@auth.fzjv1an.mongodb.net/')
-MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "Auth")
+MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb+srv://Admin:BioStorm@sih-project.5u3ahnv.mongodb.net/')
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "Keechak")
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-this-secret-in-prod")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
@@ -59,6 +58,12 @@ async def lifespan(app: FastAPI):
 # --------------------------
 from fastapi.responses import JSONResponse
 app = FastAPI(title="EcoLearn Auth (FastAPI + MongoDB + StaticFiles)", lifespan=lifespan)
+
+# --- Schools endpoint for frontend dropdown ---
+@app.get("/schools")
+async def get_schools():
+    schools = await app.db.schools.find({}, {"name": 1, "code": 1, "city": 1}).to_list(length=100)
+    return [{"id": str(s["_id"]), "name": s.get("name", ""), "code": s.get("code", ""), "city": s.get("city", "")} for s in schools]
 
 # CORS - permissive for dev. Lock down in production.
 app.add_middleware(
@@ -114,7 +119,8 @@ PhoneT = Annotated[str, Field(pattern=r"^\+?[0-9]{7,15}$")]
 PasswordT = Annotated[str, Field(min_length=8)]
 
 
-# --- Extended UserCreate for school and location ---
+
+# --- Normalized UserCreate: only school_id (ObjectId) ---
 class UserCreate(BaseModel):
     name: NameT
     age: Annotated[int, Field(ge=3, le=120)]
@@ -122,12 +128,8 @@ class UserCreate(BaseModel):
     phone: PhoneT
     email: EmailStr
     password: PasswordT
-    school_name: Annotated[str, Field(min_length=1, max_length=100)]
-    school_code: Annotated[str, Field(min_length=1, max_length=50)]
-    state: Annotated[str, Field(min_length=1, max_length=50)]
-    district: Annotated[str, Field(min_length=1, max_length=50)]
+    school_id: str  # ObjectId as string
 
-    # Pydantic v2 field validators
     @field_validator("name")
     @classmethod
     def name_must_have_letter(cls, v: str) -> str:
@@ -151,7 +153,10 @@ class UserCreate(BaseModel):
         return v
 
 
-# --- Extended UserOut for school, location, streak, login_dates ---
+
+
+# --- Normalized UserOut: school info joined, badges joined ---
+from typing import List, Dict, Any
 class UserOut(BaseModel):
     id: str
     name: str
@@ -160,12 +165,12 @@ class UserOut(BaseModel):
     phone: str
     email: EmailStr
     karma_points: int
-    school_name: str
-    school_code: str
-    state: str
-    district: str
+    school: Dict[str, Any]  # joined school info
     learning_streak: int
     login_dates: list[str]
+    role: str = "student"
+    badges: List[Dict[str, Any]] = []
+    leaderboard_rank: int = 0
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -176,16 +181,15 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
-class KarmaUpdate(BaseModel):
-    delta: int = Field(..., ge=-10000, le=10000)
 
 # --------------------------
 # MongoDB helper
 # --------------------------
 
 # --- Extended user_helper ---
-def user_helper(user_doc) -> dict:
-    return {
+import asyncio
+async def user_helper(user_doc, db=None) -> dict:
+    out = {
         "id": str(user_doc["_id"]),
         "name": user_doc["name"],
         "age": user_doc["age"],
@@ -193,13 +197,40 @@ def user_helper(user_doc) -> dict:
         "phone": user_doc["phone"],
         "email": user_doc["email"],
         "karma_points": int(user_doc.get("karma_points", 0)),
-        "school_name": user_doc.get("school_name", ""),
-        "school_code": user_doc.get("school_code", ""),
-        "state": user_doc.get("state", ""),
-        "district": user_doc.get("district", ""),
+        "school": {},
         "learning_streak": int(user_doc.get("learning_streak", 0)),
         "login_dates": [str(d) for d in user_doc.get("login_dates", [])],
+        "role": user_doc.get("role", "student"),
+        "badges": [],
+        "leaderboard_rank": 0,
     }
+    if db is not None:
+        # School info join
+        school = await db.schools.find_one({"_id": ObjectId(user_doc["school_id"])}) if user_doc.get("school_id") else None
+        if school:
+            out["school"] = {
+                "id": str(school["_id"]),
+                "name": school.get("name", ""),
+                "code": school.get("code", ""),
+                "city": school.get("city", ""),
+                "admin_id": str(school.get("admin_id", "")),
+            }
+        # Badges join
+        user_badges = await db.user_badges.find({"user_id": user_doc["_id"]}).to_list(length=100)
+        badge_ids = [ub["badge_id"] for ub in user_badges]
+        badges = []
+        if badge_ids:
+            badges = await db.badges.find({"_id": {"$in": badge_ids}}).to_list(length=100)
+        out["badges"] = [{"name": b.get("name"), "image_url": b.get("image_url"), "unlocked_at": str(next((ub["unlocked_at"] for ub in user_badges if ub["badge_id"]==b["_id"]), ""))} for b in badges]
+        # Leaderboard rank (by karma_points, descending)
+        rank = 1
+        cursor = db.users.find({}, {"_id": 1, "karma_points": 1}).sort("karma_points", -1)
+        async for u in cursor:
+            if u["_id"] == user_doc["_id"]:
+                break
+            rank += 1
+        out["leaderboard_rank"] = rank
+    return out
 
 # --------------------------
 # Lifespan (replaces startup/shutdown)
@@ -249,15 +280,19 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=400, detail="Invalid user id in token")
     if not user_doc:
         raise HTTPException(status_code=404, detail="User not found")
-    return user_helper(user_doc)
+    return await user_helper(user_doc, app.db)
 
 # --------------------------
 # Routes
 # --------------------------
 
 # --- Extended signup to include school/location and streak fields ---
-@app.post("/signup", response_model=UserOut, status_code=201)
+@app.post("/signup")
 async def signup(user: UserCreate):
+    # Validate school exists
+    school = await app.db.schools.find_one({"_id": ObjectId(user.school_id)})
+    if not school:
+        raise HTTPException(status_code=400, detail="Invalid school_id")
     hashed_pwd = hash_password(user.password)
     user_doc = {
         "name": user.name,
@@ -266,12 +301,9 @@ async def signup(user: UserCreate):
         "phone": user.phone,
         "email": user.email.lower(),
         "password": hashed_pwd,
-        "karma_points": 0,
+        "karma_points": 50,  # Signup bonus
         "created_at": datetime.utcnow(),
-        "school_name": user.school_name,
-        "school_code": user.school_code,
-        "state": user.state,
-        "district": user.district,
+        "school_id": ObjectId(user.school_id),
         "learning_streak": 0,
         "login_dates": [],
     }
@@ -286,11 +318,60 @@ async def signup(user: UserCreate):
             raise HTTPException(status_code=400, detail="Phone already registered")
         raise HTTPException(status_code=400, detail="Duplicate value")
     created = await app.db.users.find_one({"_id": result.inserted_id})
-    return user_helper(created)
+    # Badge unlock check for signup (e.g., signup bonus karma)
+    new_badges = await check_and_award_badges(created, app.db)
+    user_out = await user_helper(created, app.db)
+    resp = {"user": user_out}
+    if new_badges:
+        resp["new_badges"] = new_badges
+    return resp
 
 
 # --- Extended login to update login_dates and learning_streak ---
-@app.post("/login", response_model=TokenResponse)
+
+# --- Badge unlock logic helper ---
+async def check_and_award_badges(user_doc, db):
+    """
+    Checks badge conditions and awards new badges if unlocked. Returns list of new badge names.
+    """
+    new_badges = []
+    user_id = user_doc["_id"]
+    karma = int(user_doc.get("karma_points", 0))
+    streak = int(user_doc.get("learning_streak", 0))
+    # Get already unlocked badge ids
+    user_badges = await db.user_badges.find({"user_id": user_id}).to_list(length=100)
+    unlocked_badge_ids = set(ub["badge_id"] for ub in user_badges)
+    # Badge conditions (from readme.txt)
+    badge_conditions = [
+        # Streak badges
+        ("Eco Newbie", lambda u: streak >= 1),
+        ("Eco Enthusiast", lambda u: streak >= 3),
+        ("Eco Warrior", lambda u: streak >= 7),
+        ("Eco Champion", lambda u: streak >= 14),
+        ("Eco Legend", lambda u: streak >= 30),
+        # Karma badges
+        ("Green Sprout", lambda u: karma >= 100),
+        ("Tree Planter", lambda u: karma >= 250),
+        ("Water Saver", lambda u: karma >= 500),
+        ("Plastic Buster", lambda u: karma >= 1000),
+        ("Earth Guardian", lambda u: karma >= 2000),
+    ]
+    # Get all badge docs
+    all_badges = await db.badges.find({"name": {"$in": [b[0] for b in badge_conditions]}}).to_list(length=20)
+    name_to_badge = {b["name"]: b for b in all_badges}
+    now = datetime.utcnow()
+    for badge_name, cond in badge_conditions:
+        badge = name_to_badge.get(badge_name)
+        if badge and badge["_id"] not in unlocked_badge_ids and cond(user_doc):
+            await db.user_badges.insert_one({
+                "user_id": user_id,
+                "badge_id": badge["_id"],
+                "unlocked_at": now
+            })
+            new_badges.append(badge_name)
+    return new_badges
+
+@app.post("/login")
 async def login(payload: LoginRequest):
     user_doc = await app.db.users.find_one({"email": payload.email.lower()})
     if not user_doc:
@@ -301,9 +382,11 @@ async def login(payload: LoginRequest):
     # --- Learning streak logic ---
     today = datetime.utcnow().date()
     login_dates = [datetime.strptime(d, "%Y-%m-%d").date() if isinstance(d, str) else d.date() for d in user_doc.get("login_dates", [])]
+    daily_bonus = 0
     if today not in login_dates:
         login_dates.append(today)
         login_dates = sorted(set(login_dates))
+        daily_bonus = 5
     # Calculate streak: consecutive days up to today
     streak = 0
     for i in range(len(login_dates)-1, -1, -1):
@@ -312,33 +395,32 @@ async def login(payload: LoginRequest):
         else:
             break
     # Update user in DB
+    update_fields = {
+        "login_dates": [d.strftime("%Y-%m-%d") for d in login_dates],
+        "learning_streak": streak
+    }
+    if daily_bonus:
+        update_fields["karma_points"] = int(user_doc.get("karma_points", 0)) + daily_bonus
     await app.db.users.update_one(
         {"_id": user_doc["_id"]},
-        {"$set": {
-            "login_dates": [d.strftime("%Y-%m-%d") for d in login_dates],
-            "learning_streak": streak
-        }}
+        {"$set": update_fields}
     )
+    # Refresh user_doc
+    user_doc = await app.db.users.find_one({"_id": user_doc["_id"]})
+    # --- Badge unlock check ---
+    new_badges = await check_and_award_badges(user_doc, app.db)
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token = create_access_token(data={"user_id": str(user_doc["_id"]), "email": user_doc["email"]}, expires_delta=access_token_expires)
-    return TokenResponse(access_token=token, expires_in=int(access_token_expires.total_seconds()))
+    resp = {"access_token": token, "token_type": "bearer", "expires_in": int(access_token_expires.total_seconds())}
+    if new_badges:
+        resp["new_badges"] = new_badges
+    return resp
 
 @app.get("/me", response_model=UserOut)
 async def me(current_user: dict = Depends(get_current_user)):
     return current_user
 
-@app.post("/karma", response_model=UserOut)
-async def update_karma(update: KarmaUpdate, current_user: dict = Depends(get_current_user)):
-    user_id = ObjectId(current_user["id"])
-    new = await app.db.users.find_one_and_update(
-        {"_id": user_id},
-        {"$inc": {"karma_points": int(update.delta)}},
-        return_document=ReturnDocument.AFTER,
-    )
-    if not new:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user_helper(new)
 
 if __name__ == "__main__":
     import uvicorn
