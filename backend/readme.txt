@@ -14,3 +14,49 @@ Steps to test/run the program.
 2   press ctrl+shift+`
 3   in new terminal run -> python -m http.server 8080 --directory public
 4   open http://localhost:8080/
+
+
+============================
+Karma Points System
+============================
+
+- Signup Bonus: Every new user receives +50 karma upon account creation.
+- Daily Login Bonus: +5 karma is automatically awarded for the first login each day.
+
+
+
+============================
+Badge Names & Unlock Conditions
+============================
+
+Streak-Based Badges:
+- Eco Newbie: 1-day login streak
+- Eco Enthusiast: 3-day login streak
+- Eco Warrior: 7-day login streak
+- Eco Champion: 14-day login streak
+- Eco Legend: 30-day login streak
+
+Karma/Points-Based Badges:
+- Green Sprout: Earn 100 Karma points
+- Tree Planter: Earn 250 Karma points
+- Water Saver: Earn 500 Karma points
+- Plastic Buster: Earn 1000 Karma points
+- Earth Guardian: Earn 2000 Karma points
+
+Quest Completion Badges:
+- Quest Beginner: Complete 1 quest
+- Quest Explorer: Complete 10 quests
+- Quest Master: Complete 25 quests
+
+Social/Leaderboard Badges:
+- Team Player: Participate in a group activity
+- School Star: Reach top 3 in school leaderboard
+- Punjab Pride: Reach top 10 in Punjab leaderboard
+
+Themed/Seasonal Badges:
+- Jal Jagrukta Hero: Complete all water week quests
+- Plastic Mukti Hero: Complete all plastic week quests
+- Vayu Shuddhi Hero: Complete all air week quests
+- Bhoomi Sanrakshan Hero: Complete all land week quests
+
+
