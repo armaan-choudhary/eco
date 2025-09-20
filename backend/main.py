@@ -1,4 +1,3 @@
-# main.py
 import os
 from datetime import datetime, timedelta
 from typing import Optional, Annotated
@@ -56,13 +55,35 @@ async def lifespan(app: FastAPI):
 # --------------------------
 # App (attach lifespan)
 # --------------------------
+
 from fastapi.responses import JSONResponse
 app = FastAPI(title="EcoLearn Auth (FastAPI + MongoDB + StaticFiles)", lifespan=lifespan)
 
+# Endpoint to return both schools and colleges for frontend dropdown
+@app.get("/institutes")
+async def get_institutes():
+    schools = await institute_db.schools.find({}, {"name": 1, "code": 1, "city": 1}).to_list(length=100)
+    for s in schools:
+        s["type"] = "school"
+    colleges = await institute_db.colleges.find({}, {"name": 1, "code": 1, "city": 1}).to_list(length=100)
+    for c in colleges:
+        c["type"] = "college"
+    # Return a single list with type field
+    return [
+        {"id": str(i["_id"]), "name": i.get("name", ""), "code": i.get("code", ""), "city": i.get("city", ""), "type": i["type"]}
+        for i in (schools + colleges)
+    ]
+
 # --- Schools endpoint for frontend dropdown ---
+
+# Use a separate Motor client for the 'institute' database
+from motor.motor_asyncio import AsyncIOMotorClient
+institute_client = AsyncIOMotorClient(MONGODB_URI)
+institute_db = institute_client["institute"]
+
 @app.get("/schools")
 async def get_schools():
-    schools = await app.db.schools.find({}, {"name": 1, "code": 1, "city": 1}).to_list(length=100)
+    schools = await institute_db.schools.find({}, {"name": 1, "code": 1, "city": 1}).to_list(length=100)
     return [{"id": str(s["_id"]), "name": s.get("name", ""), "code": s.get("code", ""), "city": s.get("city", "")} for s in schools]
 
 # CORS - permissive for dev. Lock down in production.
@@ -205,16 +226,30 @@ async def user_helper(user_doc, db=None) -> dict:
         "leaderboard_rank": 0,
     }
     if db is not None:
-        # School info join
-        school = await db.schools.find_one({"_id": ObjectId(user_doc["school_id"])}) if user_doc.get("school_id") else None
+        # School/College info join from INSTITUTE DB
+        from motor.motor_asyncio import AsyncIOMotorClient
+        MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb+srv://Admin:BioStorm@sih-project.5u3ahnv.mongodb.net/')
+        institute_client = AsyncIOMotorClient(MONGODB_URI)
+        institute_db = institute_client["institute"]
+        school = await institute_db.schools.find_one({"_id": ObjectId(user_doc["school_id"])}) if user_doc.get("school_id") else None
         if school:
             out["school"] = {
                 "id": str(school["_id"]),
                 "name": school.get("name", ""),
                 "code": school.get("code", ""),
                 "city": school.get("city", ""),
-                "admin_id": str(school.get("admin_id", "")),
+                "type": "school",
             }
+        else:
+            college = await institute_db.colleges.find_one({"_id": ObjectId(user_doc["school_id"])}) if user_doc.get("school_id") else None
+            if college:
+                out["school"] = {
+                    "id": str(college["_id"]),
+                    "name": college.get("name", ""),
+                    "code": college.get("code", ""),
+                    "city": college.get("city", ""),
+                    "type": "college",
+                }
         # Badges join
         user_badges = await db.user_badges.find({"user_id": user_doc["_id"]}).to_list(length=100)
         badge_ids = [ub["badge_id"] for ub in user_badges]
@@ -289,9 +324,12 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 # --- Extended signup to include school/location and streak fields ---
 @app.post("/signup")
 async def signup(user: UserCreate):
-    # Validate school exists
-    school = await app.db.schools.find_one({"_id": ObjectId(user.school_id)})
+    # Validate school or college exists in the INSTITUTE DB
+    school = await institute_db.schools.find_one({"_id": ObjectId(user.school_id)})
+    college = None
     if not school:
+        college = await institute_db.colleges.find_one({"_id": ObjectId(user.school_id)})
+    if not (school or college):
         raise HTTPException(status_code=400, detail="Invalid school_id")
     hashed_pwd = hash_password(user.password)
     user_doc = {
