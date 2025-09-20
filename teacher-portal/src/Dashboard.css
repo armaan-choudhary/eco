@@ -1,0 +1,50 @@
+/* General Body and Font Styles */
+body {
+  font-family: 'Poppins', sans-serif;
+  background: linear-gradient(to bottom, #f5f7fa, #c3cfe2);
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+/* Page Container */
+.page-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  padding: 20px;
+}
+
+/* Cards Container */
+.cards-container {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+/* Individual Cards */
+.dashboard-card {
+  padding: 30px;
+  border-radius: 10px;
+  text-align: center;
+  flex: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease-in-out;
+}
+
+/* Specific Card Colors */
+#badges-card {
+  background-color: #e6f7ff;
+  border: 1px solid #91d5ff;
+}
+
+#quests-card {
+  background-color: #fff0f6;
+  border: 1px solid #ffadd2;
+}
+
+#karma-card {
+  background-color: #f6ffed;
+  border: 1px solid #b7eb8f;
+}
