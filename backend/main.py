@@ -16,6 +16,9 @@ import pymongo.errors
 import re
 from pymongo import MongoClient
 
+from fastapi.responses import FileResponse
+
+
 # --------------------------
 # Configuration (env vars)
 # --------------------------
@@ -65,7 +68,13 @@ async def lifespan(app: FastAPI):
 
 from fastapi.responses import JSONResponse
 app = FastAPI(title="EcoLearn Auth (FastAPI + MongoDB + StaticFiles)", lifespan=lifespan)
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)  #new
 # Endpoint to return both schools and colleges for frontend dropdown
 @app.get("/institutes")
 async def get_institutes():
@@ -87,6 +96,24 @@ async def get_institutes():
 from motor.motor_asyncio import AsyncIOMotorClient
 institute_client = AsyncIOMotorClient(MONGODB_URI)
 institute_db = institute_client["institute"]
+
+# API endpoint for the Quests report
+@app.get("/reports/quests")
+def get_quests_report():
+    file_path = "quests_report.txt"
+    with open(file_path, "w") as f:
+        f.write("Quests Report\n")
+        f.write("Quest ID, Status\n") 
+        f.write("1, Active\n")
+        f.write("2, Completed\n")
+    return FileResponse(path=file_path, filename="quests_report.txt", media_type="text/plain")
+@app.get("/students")
+def get_students():
+    # We will use your existing client to connect to the database
+    db_auth = app.mongodb_client[MONGO_DB_NAME_AUTH]
+    students_collection = db_auth['students']
+    students_list = list(students_collection.find({}, {'_id': 0}))
+    return students_list
 
 @app.get("/schools")
 async def get_schools():
