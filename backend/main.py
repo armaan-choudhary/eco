@@ -20,13 +20,13 @@ from pymongo import MongoClient
 # Configuration (env vars)
 # --------------------------
 MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb+srv://Admin:BioStorm@sih-project.5u3ahnv.mongodb.net/')
-MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "Keechak")
+MONGO_DB_NAME_AUTH = os.getenv("MONGO_DB_NAME_AUTH", "Keechak")
+MONGO_DB_NAME_CONTENT = os.getenv("MONGO_DB_NAME_CONTENT", "prakriti_content")
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-this-secret-in-prod")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
-client = MongoClient(MONGODB_URI)
-db = client[MONGO_DB_NAME]
+
 
 # --------------------------
 # Security utils
@@ -37,19 +37,26 @@ security = HTTPBearer()
 # --------------------------
 # Lifespan (replaces startup/shutdown)
 # --------------------------
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # startup
     app.mongodb_client = AsyncIOMotorClient(MONGODB_URI)
-    app.db = app.mongodb_client[MONGO_DB_NAME]
-    try:
-        # ensure unique indexes (best-effort)
-        await app.db.users.create_index("email", unique=True)
-        await app.db.users.create_index("phone", unique=True)
-    except Exception:
-        pass
+    app.db_auth = app.mongodb_client[MONGO_DB_NAME_AUTH]
+    app.db_content = app.mongodb_client[MONGO_DB_NAME_CONTENT]
     yield
-    # shutdown
+    app.mongodb_client.close()
+    app.mongodb_client = AsyncIOMotorClient(MONGODB_URI)
+    app.db_auth = app.mongodb_client[MONGO_DB_NAME_AUTH]
+    app.db_content = app.mongodb_client[MONGO_DB_NAME_CONTENT]
+    yield
+    app.mongodb_client.close()
+    app.mongodb_client = AsyncIOMotorClient(MONGODB_URI)
+    # Removed obsolete db_auth and db_content setup
+    # app.db_auth = app.mongodb_client[MONGO_DB_NAME_AUTH]
+    # app.db_content = app.mongodb_client[MONGO_DB_NAME_CONTENT]
+    yield
     app.mongodb_client.close()
 
 # --------------------------
@@ -209,7 +216,7 @@ class LoginRequest(BaseModel):
 
 # --- Extended user_helper ---
 import asyncio
-async def user_helper(user_doc, db=None) -> dict:
+async def user_helper(user_doc, db_auth=None) -> dict:
     out = {
         "id": str(user_doc["_id"]),
         "name": user_doc["name"],
@@ -225,7 +232,7 @@ async def user_helper(user_doc, db=None) -> dict:
         "badges": [],
         "leaderboard_rank": 0,
     }
-    if db is not None:
+    if db_auth is not None:
         # School/College info join from INSTITUTE DB
         from motor.motor_asyncio import AsyncIOMotorClient
         MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb+srv://Admin:BioStorm@sih-project.5u3ahnv.mongodb.net/')
@@ -251,15 +258,15 @@ async def user_helper(user_doc, db=None) -> dict:
                     "type": "college",
                 }
         # Badges join
-        user_badges = await db.user_badges.find({"user_id": user_doc["_id"]}).to_list(length=100)
+        user_badges = await db_auth.user_badges.find({"user_id": user_doc["_id"]}).to_list(length=100)
         badge_ids = [ub["badge_id"] for ub in user_badges]
         badges = []
         if badge_ids:
-            badges = await db.badges.find({"_id": {"$in": badge_ids}}).to_list(length=100)
+            badges = await db_auth.badges.find({"_id": {"$in": badge_ids}}).to_list(length=100)
         out["badges"] = [{"name": b.get("name"), "image_url": b.get("image_url"), "unlocked_at": str(next((ub["unlocked_at"] for ub in user_badges if ub["badge_id"]==b["_id"]), ""))} for b in badges]
         # Leaderboard rank (by karma_points, descending)
         rank = 1
-        cursor = db.users.find({}, {"_id": 1, "karma_points": 1}).sort("karma_points", -1)
+        cursor = db_auth.users.find({}, {"_id": 1, "karma_points": 1}).sort("karma_points", -1)
         async for u in cursor:
             if u["_id"] == user_doc["_id"]:
                 break
@@ -274,18 +281,10 @@ async def user_helper(user_doc, db=None) -> dict:
 async def lifespan(app: FastAPI):
     # startup
     app.mongodb_client = AsyncIOMotorClient(MONGODB_URI)
-    app.db = app.mongodb_client[MONGO_DB_NAME]
-    try:
-        # ensure unique indexes (best-effort)
-        await app.db.users.create_index("email", unique=True)
-        await app.db.users.create_index("phone", unique=True)
-    except Exception:
-        pass
-        # Try to list collections as a simple connectivity check
-        collections = await app.db.list_collection_names()
-        return JSONResponse(content={"status": "ok", "collections": collections})
-    except Exception as e:
-        return JSONResponse(content={"status": "error", "detail": str(e)}, status_code=500)
+    app.db_auth = app.mongodb_client[MONGO_DB_NAME_AUTH]
+    app.db_content = app.mongodb_client[MONGO_DB_NAME_CONTENT]
+    yield
+    app.mongodb_client.close()
 
 # CORS - permissive for dev. Lock down in production.
 app.add_middleware(
@@ -310,12 +309,12 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     if not user_id:
         raise HTTPException(status_code=401, detail="Token payload invalid")
     try:
-        user_doc = await app.db.users.find_one({"_id": ObjectId(user_id)})
+        user_doc = await app.db_auth.users.find_one({"_id": ObjectId(user_id)})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid user id in token")
     if not user_doc:
         raise HTTPException(status_code=404, detail="User not found")
-    return await user_helper(user_doc, app.db)
+    return await user_helper(user_doc, app.db_auth)
 
 # --------------------------
 # Routes
@@ -346,19 +345,19 @@ async def signup(user: UserCreate):
         "login_dates": [],
     }
     try:
-        result = await app.db.users.insert_one(user_doc)
+        result = await app.db_auth.users.insert_one(user_doc)
     except pymongo.errors.DuplicateKeyError:
-        existing_email = await app.db.users.find_one({"email": user.email.lower()})
+        existing_email = await app.db_auth.users.find_one({"email": user.email.lower()})
         if existing_email:
             raise HTTPException(status_code=400, detail="Email already registered")
-        existing_phone = await app.db.users.find_one({"phone": user.phone})
+        existing_phone = await app.db_auth.users.find_one({"phone": user.phone})
         if existing_phone:
             raise HTTPException(status_code=400, detail="Phone already registered")
         raise HTTPException(status_code=400, detail="Duplicate value")
-    created = await app.db.users.find_one({"_id": result.inserted_id})
+    created = await app.db_auth.users.find_one({"_id": result.inserted_id})
     # Badge unlock check for signup (e.g., signup bonus karma)
-    new_badges = await check_and_award_badges(created, app.db)
-    user_out = await user_helper(created, app.db)
+    new_badges = await check_and_award_badges(created, app.db_auth)
+    user_out = await user_helper(created, app.db_auth)
     resp = {"user": user_out}
     if new_badges:
         resp["new_badges"] = new_badges
@@ -368,7 +367,7 @@ async def signup(user: UserCreate):
 # --- Extended login to update login_dates and learning_streak ---
 
 # --- Badge unlock logic helper ---
-async def check_and_award_badges(user_doc, db):
+async def check_and_award_badges(user_doc, db_auth):
     """
     Checks badge conditions and awards new badges if unlocked. Returns list of new badge names.
     """
@@ -377,7 +376,7 @@ async def check_and_award_badges(user_doc, db):
     karma = int(user_doc.get("karma_points", 0))
     streak = int(user_doc.get("learning_streak", 0))
     # Get already unlocked badge ids
-    user_badges = await db.user_badges.find({"user_id": user_id}).to_list(length=100)
+    user_badges = await db_auth.user_badges.find({"user_id": user_id}).to_list(length=100)
     unlocked_badge_ids = set(ub["badge_id"] for ub in user_badges)
     # Badge conditions (from readme.txt)
     badge_conditions = [
@@ -395,13 +394,13 @@ async def check_and_award_badges(user_doc, db):
         ("Earth Guardian", lambda u: karma >= 2000),
     ]
     # Get all badge docs
-    all_badges = await db.badges.find({"name": {"$in": [b[0] for b in badge_conditions]}}).to_list(length=20)
+    all_badges = await db_auth.badges.find({"name": {"$in": [b[0] for b in badge_conditions]}}).to_list(length=20)
     name_to_badge = {b["name"]: b for b in all_badges}
     now = datetime.utcnow()
     for badge_name, cond in badge_conditions:
         badge = name_to_badge.get(badge_name)
         if badge and badge["_id"] not in unlocked_badge_ids and cond(user_doc):
-            await db.user_badges.insert_one({
+            await db_auth.user_badges.insert_one({
                 "user_id": user_id,
                 "badge_id": badge["_id"],
                 "unlocked_at": now
@@ -411,7 +410,7 @@ async def check_and_award_badges(user_doc, db):
 
 @app.post("/login")
 async def login(payload: LoginRequest):
-    user_doc = await app.db.users.find_one({"email": payload.email.lower()})
+    user_doc = await app.db_auth.users.find_one({"email": payload.email.lower()})
     if not user_doc:
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not verify_password(payload.password, user_doc["password"]):
@@ -439,14 +438,14 @@ async def login(payload: LoginRequest):
     }
     if daily_bonus:
         update_fields["karma_points"] = int(user_doc.get("karma_points", 0)) + daily_bonus
-    await app.db.users.update_one(
+    await app.db_auth.users.update_one(
         {"_id": user_doc["_id"]},
         {"$set": update_fields}
     )
     # Refresh user_doc
-    user_doc = await app.db.users.find_one({"_id": user_doc["_id"]})
+    user_doc = await app.db_auth.users.find_one({"_id": user_doc["_id"]})
     # --- Badge unlock check ---
-    new_badges = await check_and_award_badges(user_doc, app.db)
+    new_badges = await check_and_award_badges(user_doc, app.db_auth)
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token = create_access_token(data={"user_id": str(user_doc["_id"]), "email": user_doc["email"]}, expires_delta=access_token_expires)
@@ -459,6 +458,189 @@ async def login(payload: LoginRequest):
 async def me(current_user: dict = Depends(get_current_user)):
     return current_user
 
+
+
+# --------------------------
+# Learning Content Endpoints
+# --------------------------
+from fastapi import Query
+from typing import List
+
+# GET /learning/content - fetch current lessons/quizzes for user (by week, day, school)
+@app.get("/learning/content")
+async def get_learning_content(
+    current_user: dict = Depends(get_current_user),
+    week_id: str = Query(None),
+    day_id: int = Query(None)
+):
+    """
+    Fetch lessons/quizzes for the current user for a given week and day.
+    If week_id/day_id not provided, fetch current week/day for user's school.
+    """
+    # Find current week if not provided
+    if not week_id:
+        now = datetime.utcnow()
+        start_of_day = datetime(now.year, now.month, now.day, 0, 0, 0)
+        end_of_day = datetime(now.year, now.month, now.day, 23, 59, 59, 999000)
+        week = await app.db_content.weeks.find_one({
+            "start_date": {"$lte": end_of_day},
+            "end_date": {"$gte": start_of_day}
+        })
+        if not week:
+            raise HTTPException(status_code=404, detail="No active week found")
+        week_id = str(week["_id"])
+    # Find current day if not provided
+    if not day_id:
+        day_id = (datetime.utcnow().weekday() + 1)  # Monday=1, Sunday=7
+    # Fetch lessons from sections
+    user_type = current_user["school"].get("type", "school")
+    lesson_query = {
+        "day_id": day_id,
+        "type": "lesson"
+    }
+    if user_type == "school":
+        lesson_query["level"] = "beginner"
+    lessons = await app.db_content.sections.find(lesson_query).to_list(length=20)
+
+    # Fetch quizzes from quizzes collection
+    quiz_query = {"day_id": day_id}
+    quizzes = await app.db_content.quizzes.find(quiz_query).to_list(length=20)
+
+    # Mark completion status for user (for lessons and quizzes)
+    lesson_ids = [l["_id"] for l in lessons]
+    quiz_ids = [q["_id"] for q in quizzes]
+    user_quests = await app.db_auth.user_quests.find({
+        "user_id": ObjectId(current_user["id"]),
+
+        "quest_id": {"$in": lesson_ids + quiz_ids}
+    }).to_list(length=50)
+    completed_ids = {uq["quest_id"] for uq in user_quests}
+    for l in lessons:
+        l["completed"] = l["_id"] in completed_ids
+        l["id"] = str(l["_id"])
+        del l["_id"]
+    for q in quizzes:
+        q["completed"] = q["_id"] in completed_ids
+        q["id"] = str(q["_id"])
+        del q["_id"]
+
+    # Combine lessons and quizzes for response
+    content = lessons + quizzes
+    return {"week_id": week_id, "day_id": day_id, "content": content}
+
+# POST /learning/complete - mark lesson/quiz as completed
+class LearningCompleteRequest(BaseModel):
+    quest_id: str
+    proof_url: Optional[str] = None
+
+@app.post("/learning/complete")
+async def complete_learning_content(
+    payload: LearningCompleteRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Mark a lesson/quiz as completed for the user, update progress, karma, streaks, and badges.
+    """
+    # Try to find lesson in sections
+    lesson = await app.db_content.sections.find_one({"_id": ObjectId(payload.quest_id)})
+    quest = None
+    if lesson:
+        quest = lesson
+    else:
+        # Try to find quiz in quizzes
+        quiz = await app.db_content.quizzes.find_one({"_id": ObjectId(payload.quest_id)})
+        if quiz:
+            quest = quiz
+    if not quest:
+        raise HTTPException(status_code=404, detail="Quest not found")
+    # Check if already completed
+    already = await app.db_auth.user_quests.find_one({
+        "user_id": ObjectId(current_user["id"]),
+        "quest_id": ObjectId(payload.quest_id)
+    })
+    if already:
+        return {"success": True, "message": "Already completed"}
+    # Insert completion
+    await app.db_auth.user_quests.insert_one({
+        "user_id": ObjectId(current_user["id"]),
+        "quest_id": ObjectId(payload.quest_id),
+        "completed_at": datetime.utcnow(),
+        "proof_url": payload.proof_url or None
+    })
+    # Award karma
+    points = int(quest.get("points", 10))
+    await app.db_auth.users.update_one(
+        {"_id": ObjectId(current_user["id"])} ,
+        {"$inc": {"karma_points": points}}
+    )
+    # Optionally, update streaks, badges, etc.
+    user_doc = await app.db_auth.users.find_one({"_id": ObjectId(current_user["id"])} )
+    new_badges = await check_and_award_badges(user_doc, app.db_auth)
+    return {"success": True, "karma_earned": points, "new_badges": new_badges}
+
+# --- Quiz Submission and History ---
+class QuizSubmitRequest(BaseModel):
+    quiz_id: str
+    answers: list[int]  # index of selected option for each question
+
+@app.post("/learning/quiz/submit")
+async def submit_quiz(
+    payload: QuizSubmitRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    quiz = await app.db_content.quizzes.find_one({"_id": ObjectId(payload.quiz_id)})
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    questions = quiz.get("questions", [])
+    if len(payload.answers) != len(questions):
+        raise HTTPException(status_code=400, detail="Number of answers does not match number of questions")
+    # Check if already completed (user_quests)
+    already = await app.db_auth.user_quests.find_one({
+        "user_id": ObjectId(current_user["id"]),
+        "quest_id": ObjectId(payload.quiz_id)
+    })
+    if already:
+        raise HTTPException(status_code=400, detail="Quiz already completed")
+    correct = 0
+    results = []
+    for idx, (q, ans) in enumerate(zip(questions, payload.answers)):
+        correct_idx = q.get("answer")
+        is_correct = (ans == correct_idx)
+        results.append({
+            "question": q.get("question"),
+            "selected": ans,
+            "correct": correct_idx,
+            "is_correct": is_correct
+        })
+        if is_correct:
+            correct += 1
+    total = len(questions)
+    marks = correct
+    # Store quiz attempt in quiz_history
+    await app.db_auth.quiz_history.insert_one({
+        "user_id": ObjectId(current_user["id"]),
+        "quiz_id": ObjectId(payload.quiz_id),
+        "answers": payload.answers,
+        "results": results,
+        "marks": marks,
+        "total": total,
+        "submitted_at": datetime.utcnow()
+    })
+    # Award +10 karma for each correct answer
+    karma_earned = marks * 10
+    if karma_earned > 0:
+        await app.db_auth.users.update_one(
+            {"_id": ObjectId(current_user["id"])},
+            {"$inc": {"karma_points": karma_earned}}
+        )
+    # Mark quiz as completed in user_quests
+    await app.db_auth.user_quests.insert_one({
+        "user_id": ObjectId(current_user["id"]),
+        "quest_id": ObjectId(payload.quiz_id),
+        "completed_at": datetime.utcnow(),
+        "proof_url": None
+    })
+    return {"marks": marks, "total": total, "results": results, "karma_earned": karma_earned}
 
 if __name__ == "__main__":
     import uvicorn

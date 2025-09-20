@@ -185,5 +185,179 @@ if(checkDailyBonus && Array.isArray(data.login_dates)) {
     }
 }
 show('view-dashboard');
+// After loading profile, load learning content
+await loadLearningContent();
 }catch(err){ setMsg('Could not fetch profile: ' + err.message, false); token.del(); show('view-login'); }
+}
+
+// Fetch and display learning content
+async function loadLearningContent() {
+    const t = token.get();
+    const block = document.getElementById('learning-content-block');
+    const list = document.getElementById('learning-content-list');
+    if (!t) { block.style.display = 'none'; return; }
+    block.style.display = '';
+    list.innerHTML = 'Loading...';
+    try {
+        const res = await fetch(BACKEND_URL + '/learning/content', {
+            headers: { 'Authorization': 'Bearer ' + t }
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+        if (!data.content || !data.content.length) {
+            list.innerHTML = '<div>No learning content for today.</div>';
+            return;
+        }
+        list.innerHTML = data.content.map(item => {
+            let html = `<div class="card" style="margin-bottom:12px;">
+                <strong>${item.title || 'Untitled'}</strong>`;
+            if (item.category === 'quiz') {
+                html += ` <span class="muted small">(Quiz)</span>`;
+            } else if (item.category) {
+                html += ` <span class="muted small">(${item.category})</span>`;
+            }
+            html += '<br/>';
+            html += `<span>${item.description || ''}</span><br/>`;
+            // Show karma earned for completed quizzes, else show static points
+            if (item.category === 'quiz' && item.completed) {
+                // We'll fetch the user's quiz history for this quiz to get karma earned
+                html += `<span class="muted small" id="quiz-karma-earned-${item.id}">Karma Earned: ...</span><br/>`;
+            } else {
+                html += `<span class="muted small">Points: ${item.points || 0}</span><br/>`;
+            }
+            if (item.category === 'quiz' && Array.isArray(item.questions)) {
+                // MCQ UI
+                if (item.completed) {
+                    html += `<div class='quiz-result' style='color:green;font-weight:bold'>Completed</div>`;
+                    // Optionally, show answers/results if you want
+                } else {
+                    html += `<form class="quiz-form" data-quiz-id="${item.id}">`;
+                    item.questions.forEach((q, idx) => {
+                        html += `<div style="margin:6px 0"><b>Q${idx+1}:</b> ${q.question}<br/>`;
+                        if (q.options) {
+                            if (Array.isArray(q.options)) {
+                                q.options.forEach((opt, i) => {
+                                    html += `<label style='margin-right:12px;'><input type='radio' name='q${idx}' value='${i}'> ${String.fromCharCode(65+i)}: ${opt}</label>`;
+                                });
+                            } else if (typeof q.options === 'object') {
+                                Object.entries(q.options).forEach(([k,v], i) => {
+                                    html += `<label style='margin-right:12px;'><input type='radio' name='q${idx}' value='${k}'> ${k}: ${v}</label>`;
+                                });
+                            }
+                        }
+                        html += '</div>';
+                    });
+                    html += `<button type='submit' class='btn-submit-quiz' data-quiz-id='${item.id}'>Submit Quiz</button>`;
+                    html += `</form>`;
+                    html += `<div class='quiz-result' id='quiz-result-${item.id}'></div>`;
+                }
+            }
+        // For completed quizzes, fetch and display karma earned
+        data.content.forEach(item => {
+            if (item.category === 'quiz' && item.completed) {
+                // Fetch quiz history for this quiz and user
+                fetch(`${BACKEND_URL}/learning/quiz/history?quiz_id=${item.id}`, {
+                    headers: { 'Authorization': 'Bearer ' + token.get() }
+                })
+                .then(res => res.json())
+                .then(hist => {
+                    if (hist && typeof hist.karma_earned === 'number') {
+                        const el = document.getElementById('quiz-karma-earned-' + item.id);
+                        if (el) el.innerText = `Karma Earned: ${hist.karma_earned}`;
+                    }
+                });
+            }
+        });
+            if (item.completed && item.category !== 'quiz') {
+                html += '<span style="color:green;font-weight:bold">Completed</span>';
+            } else if (item.category !== 'quiz') {
+                html += `<button class="btn-complete-learning" data-id="${item.id}">Mark as Completed</button>`;
+            }
+            html += '</div>';
+            return html;
+        }).join('');
+
+        // Attach MCQ quiz submit listeners
+        document.querySelectorAll('.quiz-form').forEach(form => {
+            form.onsubmit = async function(e) {
+                e.preventDefault();
+                const quizId = this.getAttribute('data-quiz-id');
+                const answers = [];
+                const questions = this.querySelectorAll('div');
+                let allAnswered = true;
+                questions.forEach((qDiv, idx) => {
+                    const selected = qDiv.querySelector('input[type=radio]:checked');
+                    if (selected) {
+                        answers.push(Number(selected.value));
+                    } else {
+                        allAnswered = false;
+                    }
+                });
+                if (!allAnswered) {
+                    setMsg('Please answer all questions before submitting.', false);
+                    return;
+                }
+                try {
+                    const res = await fetch(BACKEND_URL + '/learning/quiz/submit', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + token.get(),
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ quiz_id: quizId, answers })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+                    // Show result
+                    const resultDiv = document.getElementById('quiz-result-' + quizId);
+                    resultDiv.innerHTML = `<b>Result:</b> ${data.marks} / ${data.total} correct`;
+                    data.results.forEach((r, idx) => {
+                        resultDiv.innerHTML += `<br>Q${idx+1}: ${r.is_correct ? '<span style="color:green">Correct</span>' : '<span style="color:red">Wrong</span>'}`;
+                    });
+                    let karmaMsg = '';
+                    if (typeof data.karma_earned === 'number' && data.karma_earned > 0) {
+                        karmaMsg = ` (+${data.karma_earned} karma)`;
+                        // Update karma value in dashboard in real time
+                        const karmaEl = document.getElementById('karma-value');
+                        if (karmaEl) {
+                            const prev = parseInt(karmaEl.innerText) || 0;
+                            karmaEl.innerText = prev + data.karma_earned;
+                        }
+                    }
+                    setMsg('Quiz submitted! Marks: ' + data.marks + ' / ' + data.total + karmaMsg, true);
+                    // After submission, reload content to mark as completed and disable further changes
+                    await loadLearningContent();
+                } catch (err) {
+                    setMsg('Could not submit quiz: ' + err.message, false);
+                }
+            };
+        });
+        // Attach event listeners for completion
+        document.querySelectorAll('.btn-complete-learning').forEach(btn => {
+            btn.onclick = async function() {
+                const questId = this.getAttribute('data-id');
+                this.disabled = true;
+                this.innerText = 'Submitting...';
+                try {
+                    const res = await fetch(BACKEND_URL + '/learning/complete', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + t,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ quest_id: questId })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+                    setMsg('Marked as completed! +' + (data.karma_earned || 0) + ' karma.', true);
+                    await loadLearningContent();
+                    await loadProfile(); // Refresh profile for karma/badges
+                } catch (err) {
+                    setMsg('Could not mark as completed: ' + err.message, false);
+                }
+            };
+        });
+    } catch (err) {
+        list.innerHTML = '<div style="color:red">Could not load learning content: ' + err.message + '</div>';
+    }
 }
