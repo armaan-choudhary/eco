@@ -27,32 +27,32 @@ function show(view) {
     document.getElementById('login-email').parentElement.style.display = view === 'view-login' ? '' : 'none';
     document.getElementById('view-dashboard').style.display = view === 'view-dashboard' ? '' : 'none';
 }
-// Store all schools for filtering
-let ALL_SCHOOLS = [];
-async function fetchSchools() {
+// Store all institutes for filtering
+let ALL_INSTITUTES = [];
+async function fetchInstitutes() {
     try {
-        const res = await fetch(BACKEND_URL + '/schools');
+        const res = await fetch(BACKEND_URL + '/institutes');
         const data = await res.json();
         if (Array.isArray(data)) {
-            ALL_SCHOOLS = data;
+            ALL_INSTITUTES = data;
         }
     } catch (e) {
-        ALL_SCHOOLS = [];
+        ALL_INSTITUTES = [];
     }
 }
 
-function populateSchools(district) {
-    const sel = $('signup-school-id');
+function populateInstitutes(type, district) {
+    const sel = $('signup-institute-id');
     sel.innerHTML = '<option value="">Loading...</option>';
-    let filtered = ALL_SCHOOLS;
+    let filtered = ALL_INSTITUTES.filter(i => i.type === type);
     if (district) {
-        filtered = ALL_SCHOOLS.filter(s => (s.city || '').toLowerCase() === district.toLowerCase());
+        filtered = filtered.filter(i => (i.city || '').toLowerCase() === district.toLowerCase());
     }
     if (filtered.length > 0) {
-        sel.innerHTML = '<option value="">Select your school</option>' +
-            filtered.map(s => `<option value="${s.id}">${s.name} (${s.code || ''})</option>`).join('');
+        sel.innerHTML = '<option value="">Select your ' + (type === 'school' ? 'school' : 'college') + '</option>' +
+            filtered.map(i => `<option value="${i.id}">${i.name} (${i.code || ''})</option>`).join('');
     } else {
-        sel.innerHTML = '<option value="">No schools found</option>';
+        sel.innerHTML = '<option value="">No ' + (type === 'school' ? 'schools' : 'colleges') + ' found</option>';
     }
 }
 
@@ -68,11 +68,22 @@ function populateDistricts() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    await fetchSchools();
+
+    await fetchInstitutes();
     populateDistricts();
-    populateSchools();
+    // Default: show schools
+    populateInstitutes('school');
+
+    $('signup-institute-type').addEventListener('change', function() {
+        const type = this.value;
+        const district = $('signup-district').value;
+        populateInstitutes(type, district);
+        // Change label
+        $('signup-institute-label').innerText = type === 'school' ? 'School' : 'College';
+    });
     $('signup-district').addEventListener('change', function() {
-        populateSchools(this.value);
+        const type = $('signup-institute-type').value;
+        populateInstitutes(type, this.value);
     });
     $('btn-signup').addEventListener('click', async ()=>{
         const payload = {
@@ -82,7 +93,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             phone: $('signup-phone').value.trim(),
             email: $('signup-email').value.trim(),
             password: $('signup-password').value,
-            school_id: $('signup-school-id').value.trim()
+            school_id: $('signup-institute-id').value.trim() // backend expects school_id, works for both
         };
         try{
             const res = await fetch(BACKEND_URL + '/signup', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
@@ -148,10 +159,11 @@ $('user-email').innerText = data.email;
 $('user-phone').innerText = data.phone;
 $('user-age').innerText = 'Age: ' + data.age;
 $('karma-value').innerText = data.karma_points;
-// Extract school info from nested object
+// Extract school/college info from nested object
 const school = data.school || {};
-$('user-school-name').innerText = 'School: ' + (school.name || '-');
-$('user-school-code').innerText = 'School Code: ' + (school.code || '-');
+const isCollege = school.type === 'college';
+$('user-school-name').innerText = (isCollege ? 'College: ' : 'School: ') + (school.name || '-');
+$('user-school-code').innerText = (isCollege ? 'College Code: ' : 'School Code: ') + (school.code || '-');
 $('user-state').innerText = 'State: ' + (school.state || 'Punjab');
 $('user-district').innerText = 'District: ' + (school.city || '-');
 $('user-streak').innerText = 'Learning Streak: ' + (data.learning_streak || 0);
