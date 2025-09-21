@@ -70,3 +70,43 @@ Themed/Seasonal Badges:
 - Bhoomi Sanrakshan Hero: Complete all land week quests
 
 
+============================
+API Endpoints
+============================
+
+- POST /signup
+  Register a new user. Requires: name, age, gender, phone, email, password, school_id.
+  Returns: access token and user info on success.
+
+- POST /login
+  User login. Requires: email, password.
+  Returns: access token and user info on success.
+
+- GET /me
+  Get current user profile. Requires: Authorization header (Bearer token).
+  Returns: user profile data.
+
+- GET /institutes
+  Get list of all institutes (schools/colleges).
+  Returns: array of institute objects.
+
+- GET /learning/content
+  Get lessons and quizzes for the current user for the current (or specified) week/day.
+  Requires: Authorization header (Bearer token).
+  Optional query params: week_id, day_id.
+  Returns: lessons and quizzes with completion status.
+
+- POST /learning/quiz/submit
+  Submit quiz answers. Requires: Authorization header (Bearer token).
+  Body: quiz_id, answers (array of selected option indices).
+  Returns: quiz results, karma earned/deducted, and feedback.
+
+- POST /learning/complete
+  Mark a lesson as completed. Requires: Authorization header (Bearer token).
+  Body: quest_id (lesson id).
+  Returns: completion confirmation.
+
+- GET /db-status
+  Check database connection status. Returns: status info.
+
+
