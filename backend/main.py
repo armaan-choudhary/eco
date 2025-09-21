@@ -1,12 +1,8 @@
-
-# --- Standard and third-party imports ---
 import os
 import re
 from datetime import datetime, timedelta
 from typing import Optional, Annotated, List, Dict, Any
 from contextlib import asynccontextmanager
-<<<<<<< HEAD
-=======
 
 import uvicorn
 import pymongo.errors
@@ -16,51 +12,11 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
->>>>>>> 5a1fc6e (Backend Fixes + Minor Frontend Progress)
 from fastapi import FastAPI, HTTPException, Depends, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
-<<<<<<< HEAD
-from pydantic import BaseModel, EmailStr, Field, field_validator
-from motor.motor_asyncio import AsyncIOMotorClient
-from passlib.context import CryptContext
-from jose import JWTError, jwt
-from bson import ObjectId
-from pymongo import ReturnDocument
-import pymongo.errors
-import re
-from pymongo import MongoClient
-<<<<<<< HEAD
-from fastapi.responses import FileResponse #final response
-=======
-from fastapi.responses import FileResponse
-
-# Helper to convert ObjectId fields to strings recursively
-def fix_object_ids(doc):
-    if isinstance(doc, list):
-        return [fix_object_ids(d) for d in doc]
-    if isinstance(doc, dict):
-        return {k: (str(v) if isinstance(v, ObjectId) else fix_object_ids(v)) for k, v in doc.items()}
-    return doc
-
-# --- Fix: Ensure institute_db and Depends are available everywhere ---
-institute_client = AsyncIOMotorClient(os.getenv('MONGODB_URI', 'mongodb+srv://Admin:BioStorm@sih-project.5u3ahnv.mongodb.net/'))
-institute_db = institute_client["institute"]
->>>>>>> d14ef8a6e97da6f6e1f20cca4dc58ede9ab8e1ee
-#codebreakfinalboss
-from fastapi.encoders import jsonable_encoder
-from bson import ObjectId
-# At the top of main.py, add these imports
-import io
-import csv
-from fastapi.responses import StreamingResponse
-
-# This line teaches FastAPI how to convert ObjectId to a string for JSON
-
-=======
 from fastapi.responses import FileResponse, JSONResponse
->>>>>>> 5a1fc6e (Backend Fixes + Minor Frontend Progress)
 
 # --------------------------
 # Configuration
@@ -79,252 +35,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
-<<<<<<< HEAD
-# --------------------------
-# Lifespan (replaces startup/shutdown)
-# --------------------------
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # startup
-    app.mongodb_client = AsyncIOMotorClient(MONGODB_URI)
-    app.db_auth = app.mongodb_client[MONGO_DB_NAME_AUTH]
-    app.db_content = app.mongodb_client[MONGO_DB_NAME_CONTENT]
-    yield
-    app.mongodb_client.close()
-    app.mongodb_client = AsyncIOMotorClient(MONGODB_URI)
-    app.db_auth = app.mongodb_client[MONGO_DB_NAME_AUTH]
-    app.db_content = app.mongodb_client[MONGO_DB_NAME_CONTENT]
-    yield
-    app.mongodb_client.close()
-    app.mongodb_client = AsyncIOMotorClient(MONGODB_URI)
-    # Removed obsolete db_auth and db_content setup
-    # app.db_auth = app.mongodb_client[MONGO_DB_NAME_AUTH]
-    # app.db_content = app.mongodb_client[MONGO_DB_NAME_CONTENT]
-    yield
-    app.mongodb_client.close()
-
-# --------------------------
-# App (attach lifespan)
-# --------------------------
-
-from fastapi.responses import JSONResponse
-app = FastAPI(title="EcoLearn Auth (FastAPI + MongoDB + StaticFiles)", lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-) #mid
-# Endpoint to return both schools and colleges for frontend dropdown
-
-class QuizSubmitRequest(BaseModel):
-    quiz_id: str
-    answers: list[int]  # index of selected option for each question
-
-<<<<<<< HEAD
-
-# Use a separate Motor client for the 'institute' database
-from motor.motor_asyncio import AsyncIOMotorClient
-institute_client = AsyncIOMotorClient(MONGODB_URI)
-institute_db = institute_client["institute"]
-
-# In main.py, add this Pydantic model near your other models
-class QuestCreate(BaseModel):
-    title: str
-    description: str
-
-# Add these three new endpoints to main.py
-@app.get("/quests")
-async def get_all_quests():
-    # Use db_content to store quests
-    quests_collection = client[MONGO_DB_NAME_CONTENT]['quests']
-    quests = await quests_collection.find({}).to_list(length=100)
-    return quests
-
-@app.post("/quests")
-async def create_quest(quest: QuestCreate):
-    quests_collection = client[MONGO_DB_NAME_CONTENT]['quests']
-    new_quest = await quests_collection.insert_one(quest.dict())
-    created_quest = await quests_collection.find_one({"_id": new_quest.inserted_id})
-    return created_quest
-
-@app.delete("/quests/{quest_id}")
-async def delete_quest(quest_id: str):
-    quests_collection = client[MONGO_DB_NAME_CONTENT]['quests']
-    delete_result = await quests_collection.delete_one({"_id": ObjectId(quest_id)})
-    if delete_result.deleted_count == 1:
-        return {"status": "success", "message": "Quest deleted"}
-    raise HTTPException(status_code=404, detail="Quest not found")
-
-# API endpoint for the Quests report
-@app.get("/reports/quests")
-def get_quests_report():
-    file_path = "quests_report.txt"
-    with open(file_path, "w") as f:
-        f.write("Quests Report\n")
-        f.write("Quest ID, Status\n") 
-        f.write("1, Active\n")
-        f.write("2, Completed\n")
-    return FileResponse(path=file_path, filename="quests_report.txt", media_type="text/plain")
-# In main.py, replace the old @app.get("/students") function with this one
-
-# In main.py, add this new endpoint
-
-@app.get("/reports/students")
-async def download_student_report():
-    students = await db_auth.users.find({}).to_list(length=None) # Get all users
-    
-    output = io.StringIO()
-    writer = csv.writer(output)
-    
-    # Write the header row
-    writer.writerow(["ID", "Name", "Email", "Karma Points"])
-    
-    # Write data rows
-    for student in students:
-        writer.writerow([
-            str(student["_id"]),
-            student.get("name"),
-            student.get("email"),
-            student.get("karma_points", 0)
-        ])
-    
-    output.seek(0) # Go to the beginning of the StringIO buffer
-    
-    headers = {
-        "Content-Disposition": "attachment; filename=student_report.csv"
-    }
-    
-    return StreamingResponse(output, headers=headers, media_type="text/csv")
-
-=======
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    token = credentials.credentials
-    payload = decode_access_token(token)
-    user_id = payload.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Token payload invalid")
-    try:
-        user_doc = await app.db_auth.users.find_one({"_id": ObjectId(user_id)})
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid user id in token")
-    if not user_doc:
-        raise HTTPException(status_code=404, detail="User not found")
-    return await user_helper(user_doc, app.db_auth)
-
-# --- Enhanced Quiz Submission with Keechak Maskot Logic ---
-@app.post("/learning/quiz/submit")
-async def submit_quiz(
-    payload: QuizSubmitRequest,
-    current_user: dict = Depends(get_current_user)
-):
-    quiz = await app.db_content.quizzes.find_one({"_id": ObjectId(payload.quiz_id)})
-    if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
-    questions = quiz.get("questions", [])
-    if len(payload.answers) != len(questions):
-        raise HTTPException(status_code=400, detail="Number of answers does not match number of questions")
-    # Check if already completed (user_quests)
-    already = await app.db_auth.user_quests.find_one({
-        "user_id": ObjectId(current_user["id"]),
-        "quest_id": ObjectId(payload.quiz_id)
-    })
-    if already:
-        raise HTTPException(status_code=400, detail="Quiz already completed")
->>>>>>> d14ef8a6e97da6f6e1f20cca4dc58ede9ab8e1ee
-
-    # Determine if today is a weekend (Saturday=6, Sunday=7)
-    today_weekday = datetime.utcnow().isoweekday()  # 1=Mon, 7=Sun
-    is_weekend = today_weekday in [6, 7]
-
-    correct = 0
-    wrong = 0
-    results = []
-    keechak_messages = []
-    for idx, (q, ans) in enumerate(zip(questions, payload.answers)):
-        correct_idx = q.get("answer")
-        is_correct = (ans == correct_idx)
-        if is_correct:
-            correct += 1
-            if is_weekend:
-                keechak_messages.append(f"Q{idx+1}: Correct! Keechak runs away!")
-        else:
-            wrong += 1
-            if is_weekend:
-                keechak_messages.append(f"Q{idx+1}: Wrong! Keechak steals your karma!")
-        results.append({
-            "question": q.get("question"),
-            "selected": ans,
-            "correct": correct_idx,
-            "is_correct": is_correct
-        })
-
-    total = len(questions)
-    marks = correct
-    # Store quiz attempt in quiz_history
-    await app.db_auth.quiz_history.insert_one({
-        "user_id": ObjectId(current_user["id"]),
-        "quiz_id": ObjectId(payload.quiz_id),
-        "answers": payload.answers,
-        "results": results,
-        "marks": marks,
-        "total": total,
-        "submitted_at": datetime.utcnow()
-    })
-
-    karma_earned = 0
-    karma_deducted = 0
-    quiz_category = quiz.get('category', 'daily')
-    if quiz_category == 'keechak':
-        # Only deduct karma for wrong answers
-        karma_deducted = wrong * 10
-        if karma_deducted > 0:
-            await app.db_auth.users.update_one(
-                {"_id": ObjectId(current_user["id"])} ,
-                {"$inc": {"karma_points": -karma_deducted}}
-            )
-    else:
-        # Only give karma for correct answers
-        karma_earned = correct * 10
-        if karma_earned > 0:
-            await app.db_auth.users.update_one(
-                {"_id": ObjectId(current_user["id"])} ,
-                {"$inc": {"karma_points": karma_earned}}
-            )
-
-    # Mark quiz as completed in user_quests
-    await app.db_auth.user_quests.insert_one({
-        "user_id": ObjectId(current_user["id"]),
-        "quest_id": ObjectId(payload.quiz_id),
-        "completed_at": datetime.utcnow(),
-        "proof_url": None
-    })
-
-    response = {
-        "marks": marks,
-        "total": total,
-        "results": results,
-        "karma_earned": karma_earned,
-        "karma_deducted": karma_deducted,
-        "keechak_messages": keechak_messages if is_weekend else None
-    }
-    return response
-# DB Connection Status Route
-# --------------------------
-@app.get("/db-status")
-async def db_status():
-    try:
-        # Try to list collections as a simple connectivity check
-        collections = await app.db.list_collection_names()
-        return JSONResponse(content={"status": "ok", "collections": collections})
-    except Exception as e:
-        return JSONResponse(content={"status": "error", "detail": str(e)}, status_code=500)
-
-=======
->>>>>>> 5a1fc6e (Backend Fixes + Minor Frontend Progress)
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -613,65 +323,6 @@ async def login(payload: LoginRequest):
 async def me(current_user: dict = Depends(get_current_user)):
     return current_user
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-# Add this new endpoint to your main.py file
-
-# In main.py, replace the old @app.get("/leaderboard") function with this one
-# In main.py, REPLACE your old /students function with this one
-=======
-@app.get("/institutes")
-async def get_institutes():
-    institutes = await app.db_content.institutes.find().to_list(length=100)
-    return {"institutes": fix_object_ids(institutes)}
->>>>>>> d14ef8a6e97da6f6e1f20cca4dc58ede9ab8e1ee
-
-# In main.py, replace the /students function with this new one
-
-@app.get("/students")
-async def get_students():
-    try:
-        students_collection = app.db_auth['users']
-        students_list = await students_collection.find({}).to_list(length=100)
-        
-        response = []
-        for student in students_list:
-            response.append({
-                "id": str(student['_id']),
-                "name": student.get("name", "No Name"),
-                "karma_points": student.get("karma_points", 0),
-                "badges": student.get("badges", []) 
-            })
-        return response
-    except Exception as e:
-        # This will print a clear error in your backend terminal if something goes wrong
-        print(f"!!! ERROR IN /students ENDPOINT: {e}")
-        raise HTTPException(status_code=500, detail="Error fetching students from database.")
-# Also, REPLACE your old /leaderboard function with this one
-
-@app.get("/leaderboard")
-async def get_leaderboard():
-    """
-    Fetches the top 10 users sorted by karma_points.
-    """
-    leaderboard_users = await app.db_auth.users.find({}, {"name": 1, "karma_points": 1}) \
-                                             .sort("karma_points", -1) \
-                                             .limit(10) \
-                                             .to_list(length=10)
-    
-    # Manually format the response to be safe
-    response = [
-        {
-            "id": str(user["_id"]),
-            "name": user.get("name", "Unnamed User"),
-            "karma_points": user.get("karma_points", 0)
-        }
-        for user in leaderboard_users
-    ]
-    return response
-
-# GET /learning/content - fetch current lessons/quizzes for user (by week, day, school)
-=======
 @app.get("/institutes")
 async def get_institutes():
     schools = await app.db_institute.schools.find({}, {"name": 1, "code": 1, "city": 1}).to_list(length=None)
@@ -685,7 +336,6 @@ async def get_institutes():
     ])
     return result
 
->>>>>>> 5a1fc6e (Backend Fixes + Minor Frontend Progress)
 @app.get("/learning/content")
 async def get_learning_content(
     current_user: dict = Depends(get_current_user),
@@ -703,18 +353,10 @@ async def get_learning_content(
         day_id = datetime.utcnow().weekday() + 1  # Monday=1, Sunday=7
 
     user_type = current_user["school"].get("type", "school")
-<<<<<<< HEAD
-    lesson_query = {
-        "day_id": day_id,
-        "type": "lesson"
-    }
-    # Fetch all levels for the day (beginner, college, advanced)
-=======
     lesson_query = {"day_id": day_id, "type": "lesson"}
     if user_type == "school":
         lesson_query["level"] = "beginner"
     
->>>>>>> 5a1fc6e (Backend Fixes + Minor Frontend Progress)
     lessons = await app.db_content.sections.find(lesson_query).to_list(length=20)
     quizzes = await app.db_content.quizzes.find({"day_id": day_id}).to_list(length=20)
 
@@ -724,29 +366,11 @@ async def get_learning_content(
         "quest_id": {"$in": quest_ids}
     }).to_list(length=50)
     completed_ids = {uq["quest_id"] for uq in user_quests}
-<<<<<<< HEAD
-    for l in lessons:
-        l["completed"] = l["_id"] in completed_ids
-        l["id"] = str(l["_id"])
-        del l["_id"]
-    for q in quizzes:
-           q["completed"] = q["_id"] in completed_ids
-           q["id"] = str(q["_id"])
-           q["type"] = "quiz"
-           q["category"] = "quiz"
-           del q["_id"]
-
-    # Combine lessons and quizzes for response
-    content = lessons + quizzes
-
-    return fix_object_ids({"week_id": week_id, "day_id": day_id, "content": content})
-=======
 
     for item in lessons + quizzes:
         item["completed"] = item["_id"] in completed_ids
         item["id"] = str(item["_id"])
         del item["_id"]
->>>>>>> 5a1fc6e (Backend Fixes + Minor Frontend Progress)
 
     return {"week_id": week_id, "day_id": day_id, "content": lessons + quizzes}
 
@@ -780,10 +404,6 @@ async def complete_learning_content(
     new_badges = await check_and_award_badges(updated_user, app.db_auth)
     return {"success": True, "karma_earned": points, "new_badges": new_badges}
 
-<<<<<<< HEAD
-
-
-=======
 @app.post("/learning/quiz/submit")
 async def submit_quiz(
     payload: QuizSubmitRequest,
@@ -832,7 +452,6 @@ async def submit_quiz(
     })
     
     return {"marks": correct, "total": len(questions), "results": results, "karma_earned": karma_earned}
->>>>>>> 5a1fc6e (Backend Fixes + Minor Frontend Progress)
 
 # --------------------------
 # Miscellaneous Routes
