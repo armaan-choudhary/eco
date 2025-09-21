@@ -1,6 +1,7 @@
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
+import pytz
 from typing import Optional, Annotated, List, Dict, Any
 from contextlib import asynccontextmanager
 
@@ -38,6 +39,16 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
 # --------------------------
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
+
+def convert_object_ids(obj):
+    if isinstance(obj, list):
+        return [convert_object_ids(x) for x in obj]
+    elif isinstance(obj, dict):
+        return {k: convert_object_ids(v) for k, v in obj.items()}
+    elif isinstance(obj, ObjectId):
+        return str(obj)
+    else:
+        return obj
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -439,37 +450,59 @@ async def get_learning_content(
     week_id: str = Query(None),
     day_id: int = Query(None)
 ):
+    now_utc = datetime.utcnow()
+
+    # Determine week_id for context
     if not week_id:
-        now = datetime.utcnow()
-        week = await app.db_content.weeks.find_one({"start_date": {"$lte": now}, "end_date": {"$gte": now}})
+        week = await app.db_content.weeks.find_one({
+            "start_date": {"$lte": now_utc},
+            "end_date": {"$gte": now_utc}
+        })
         if not week:
-            raise HTTPException(status_code=404, detail="No active week found")
+            raise HTTPException(status_code=404, detail="No active week found for today")
         week_id = str(week["_id"])
     
     if not day_id:
-        day_id = datetime.utcnow().weekday() + 1  # Monday=1, Sunday=7
+        # ISO weekday: Monday=1 ... Sunday=7
+        day_id = datetime.now(pytz.timezone("Asia/Kolkata")).isoweekday()
 
-    user_type = current_user["school"].get("type", "school")
-    lesson_query = {"day_id": day_id, "type": "lesson"}
-    if user_type == "school":
-        lesson_query["level"] = "beginner"
-    
-    lessons = await app.db_content.sections.find(lesson_query).to_list(length=20)
-    quizzes = await app.db_content.quizzes.find({"day_id": day_id}).to_list(length=20)
+    # Fetch only today's quizzes
+    quizzes = await app.db_content.quizzes.find({"day_id": day_id}).to_list(length=None)
 
-    quest_ids = [l["_id"] for l in lessons] + [q["_id"] for q in quizzes]
-    user_quests = await app.db_auth.user_quests.find({
-        "user_id": ObjectId(current_user["id"]),
-        "quest_id": {"$in": quest_ids}
-    }).to_list(length=50)
-    completed_ids = {uq["quest_id"] for uq in user_quests}
+    if not quizzes:
+        raise HTTPException(status_code=404, detail="No learning content for today")
 
-    for item in lessons + quizzes:
-        item["completed"] = item["_id"] in completed_ids
-        item["id"] = str(item["_id"])
-        del item["_id"]
+    # ObjectId → str converter
+    def convert_object_ids(obj):
+        if isinstance(obj, list):
+            return [convert_object_ids(x) for x in obj]
+        elif isinstance(obj, dict):
+            return {k: convert_object_ids(v) for k, v in obj.items()}
+        elif isinstance(obj, ObjectId):
+            return str(obj)
+        else:
+            return obj
 
-    return {"week_id": week_id, "day_id": day_id, "content": lessons + quizzes}
+    quiz_list = []
+    for quiz in quizzes:
+        quiz_obj = {
+            "id": str(quiz["_id"]),
+            "title": quiz.get("title", "Untitled Quiz"),
+            "questions": []
+        }
+        for q in quiz.get("questions", []):
+            quiz_obj["questions"].append({
+                "question": q.get("question"),
+                "options": q.get("options", [])
+            })
+        quiz_list.append(convert_object_ids(quiz_obj))
+
+    return {
+        "week_id": week_id,
+        "day_id": day_id,
+        "quizzes": quiz_list
+    }
+
 
 @app.post("/learning/complete")
 async def complete_learning_content(
