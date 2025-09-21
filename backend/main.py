@@ -93,6 +93,7 @@ class UserCreate(BaseModel):
             raise ValueError("name must contain at least one letter")
         return v
 
+
 class UserOut(BaseModel):
     id: str
     name: str

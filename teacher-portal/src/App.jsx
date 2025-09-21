@@ -52,11 +52,12 @@ function DashboardPage({ token }) {
   const [stats, setStats] = useState({ badges: 0, quests: 0, karma: 0 });
   useEffect(() => {
     if (!token) return;
-    fetch("http://127.0.0.1:8000/me", { headers: { 'Authorization': `Bearer ${token}` }})
+    const fetchOptions = { headers: { 'Authorization': `Bearer ${token}` }, cache: 'no-cache' };
+    fetch("http://127.0.0.1:8000/me", fetchOptions)
       .then(res => res.json()).then(data => {
         if(data) setStats(prev => ({ ...prev, karma: data.karma_points || 0, badges: data.badges?.length || 0 }));
       }).catch(console.error);
-    fetch("http://127.0.0.1:8000/learning/content", { headers: { 'Authorization': `Bearer ${token}` }})
+    fetch("http://127.0.0.1:8000/learning/content", fetchOptions)
       .then(res => res.json()).then(data => {
         if (data?.content) setStats(prev => ({ ...prev, quests: data.content.filter(item => item.completed).length }));
       }).catch(console.error);
@@ -72,29 +73,22 @@ function DashboardPage({ token }) {
     </div>
   );
 }
-// In App.jsx, find and replace the entire StudentsPage function
 
 function StudentsPage() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/students")
+    fetch("http://127.0.0.1:8000/students", { cache: 'no-cache' })
       .then(res => res.json())
       .then(data => {
         setStudents(data);
         setLoading(false);
-      })
-      .catch(error => {
+      }).catch(error => {
         console.error("Error fetching students:", error);
         setLoading(false);
       });
   }, []);
-
-  if (loading) {
-    return <div style={{ padding: "20px" }}><h1>Loading students...</h1></div>;
-  }
-
+  if (loading) return <div className="page-container"><h1>Loading students...</h1></div>;
   return (
     <div className="page-container">
       <h1>Students</h1>
@@ -102,9 +96,7 @@ function StudentsPage() {
         {students.length > 0 ? (
           students.map(student => (
             <div key={student.id} className="student-tile">
-              <div className="student-avatar">
-                {student.name.charAt(0)}
-              </div>
+              <div className="student-avatar">{student.name.charAt(0)}</div>
               <h3 className="student-name">{student.name}</h3>
               <div className="student-stats">
                 <p><strong>Karma:</strong> {student.karma_points}</p>
@@ -112,9 +104,7 @@ function StudentsPage() {
               </div>
             </div>
           ))
-        ) : (
-          <p>No students found in the database.</p>
-        )}
+        ) : (<p>No students found in the database.</p>)}
       </div>
     </div>
   );
@@ -123,13 +113,13 @@ function StudentsPage() {
 function LeaderboardPage() {
   const [leaderboard, setLeaderboard] = useState([]);
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/leaderboard")
+    fetch("http://127.0.0.1:8000/leaderboard", { cache: 'no-cache' })
       .then(res => res.json())
       .then(data => setLeaderboard(data))
       .catch(console.error);
   }, []);
   return (
-    <div style={{ padding: "20px" }}>
+    <div className="page-container">
       <h1>Leaderboard</h1>
       <div className="leaderboard-grid">
         {leaderboard.length > 0 ? (
@@ -140,9 +130,7 @@ function LeaderboardPage() {
             else if (index === 2) medalClass = 'bronze-medal';
             return (
               <div key={user.id} className={`leaderboard-tile ${medalClass}`}>
-                <div className="rank-badge">
-                  {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : <span className="rank-number">{index + 1}</span>}
-                </div>
+                <div className="rank-badge">{index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : <span className="rank-number">{index + 1}</span>}</div>
                 <h3 className="student-name">{user.name}</h3>
                 <p className="karma-points">Karma Points: {user.karma}</p>
               </div>
@@ -153,50 +141,71 @@ function LeaderboardPage() {
     </div>
   );
 }
-// In App.jsx, replace the QuestsPage function
 
 function QuestsPage() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalView, setModalView] = useState('');
   const [quests, setQuests] = useState([]);
-  const [questTitle, setQuestTitle] = useState("");
-  const [questDescription, setQuestDescription] = useState("");
+  const [lessonTitle, setLessonTitle] = useState('');
+  const [lessonContent, setLessonContent] = useState('');
+  const [quizTitle, setQuizTitle] = useState('');
+  const [questions, setQuestions] = useState([{ question_text: '', options: ['', '', '', ''], correct_answer_index: 0 }]);
 
-  // Function to fetch all quests from the backend
   const fetchQuests = () => {
-    fetch("http://127.0.0.1:8000/quests")
-      .then(res => res.json())
-      .then(data => setQuests(data))
-      .catch(console.error);
+    fetch("http://127.0.0.1:8000/quests", { cache: 'no-cache' })
+      .then(res => res.json()).then(data => setQuests(data)).catch(console.error);
   };
+  useEffect(() => { fetchQuests(); }, []);
 
-  // Fetch quests when the component first loads
-  useEffect(() => {
-    fetchQuests();
-  }, []);
-
-  const handleCreateQuest = () => {
-    if (!questTitle.trim()) return alert("Please enter a title.");
-    
-    fetch("http://127.0.0.1:8000/quests", {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: questTitle, description: questDescription }),
+  const openModal = (view) => { setModalView(view); setIsModalOpen(true); };
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setLessonTitle(''); setLessonContent(''); setQuizTitle('');
+    setQuestions([{ question_text: '', options: ['', '', '', ''], correct_answer_index: 0 }]);
+  };
+  const handleAddQuestion = () => setQuestions([...questions, { question_text: '', options: ['', '', '', ''], correct_answer_index: 0 }]);
+  const handleQuestionChange = (index, field, value) => { const newQ = [...questions]; newQ[index][field] = value; setQuestions(newQ); };
+  const handleOptionChange = (qIndex, oIndex, value) => { const newQ = [...questions]; newQ[qIndex].options[oIndex] = value; setQuestions(newQ); };
+  
+  // --- NEW, MORE RELIABLE SAVE LOGIC ---
+  const handleSaveLesson = () => {
+    fetch("http://127.0.0.1:8000/lessons", { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ title: lessonTitle, content: lessonContent }), 
     })
     .then(res => res.json())
-    .then(() => {
-      fetchQuests(); // Re-fetch all quests to update the list
-      setQuestTitle("");
-      setQuestDescription("");
+    .then(newLesson => {
+      // Create a complete quest object with an empty questions array
+      const updatedLesson = { ...newLesson, questions: [], type: 'lesson' };
+      setQuests(prevQuests => [updatedLesson, ...prevQuests]); // Add new lesson to the top of the list
+      closeModal(); 
+    })
+    .catch(console.error);
+  };
+
+  const handleSaveQuiz = () => {
+    fetch("http://127.0.0.1:8000/quizzes", { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ title: quizTitle, questions }), 
+    })
+    .then(res => res.json())
+    .then(newQuiz => {
+      // Add the new quiz to the state with the correct type
+      const updatedQuiz = { ...newQuiz, type: 'quiz' };
+      setQuests(prevQuests => [updatedQuiz, ...prevQuests]); // Add new quiz to the top of the list
+      closeModal(); 
     })
     .catch(console.error);
   };
 
   const handleDeleteQuest = (idToDelete) => {
-    fetch(`http://127.0.0.1:8000/quests/${idToDelete}`, {
-      method: 'DELETE',
-    })
-    .then(res => res.json())
-    .then(() => {
-      fetchQuests(); // Re-fetch all quests to update the list
+    fetch(`http://127.0.0.1:8000/quests/${idToDelete}`, { method: 'DELETE' })
+    .then(res => {
+      if (res.ok) {
+        setQuests(prevQuests => prevQuests.filter(quest => quest._id !== idToDelete));
+      }
     })
     .catch(console.error);
   };
@@ -204,84 +213,102 @@ function QuestsPage() {
   return (
     <div className="quests-container">
       <h1>Quest Management</h1>
-      <div className="quest-form-container">
-        <h2>Create New Quest</h2>
-        <input type="text" placeholder="Quest Title" value={questTitle} onChange={(e) => setQuestTitle(e.target.value)} />
-        <textarea placeholder="Quest Description" value={questDescription} onChange={(e) => setQuestDescription(e.target.value)}></textarea>
-        <button onClick={handleCreateQuest}>Create Quest</button>
+      <div className="view-actions">
+        <button onClick={() => openModal('lesson')}>+ Create New Lesson</button>
+        <button onClick={() => openModal('quiz')}>+ Create New Quiz</button>
       </div>
       <div className="quest-list-container">
         <h2>Existing Quests</h2>
-        <ul className="quest-list">
-          {quests.length > 0 ? (
-            quests.map((quest) => (
-              <li key={quest._id}>
-                <div className="quest-info">
-                  <h3>{quest.title}</h3>
-                  <p>{quest.description}</p>
-                </div>
-                <button className="delete-btn" onClick={() => handleDeleteQuest(quest._id)}>Delete</button>
-              </li>
-            ))
-          ) : (<p>No quests found. Add one using the form above.</p>)}
-        </ul>
+        <div className="quest-grid">
+          {quests.map(quest => (
+            <div key={quest._id} className="quest-tile">
+              <span className={`quest-type-badge ${quest.type}`}>{quest.type}</span>
+              <div className="quest-info">
+                <h3>{quest.title}</h3>
+                <p>{quest.type === 'lesson' ? '📖 Lesson' : `❓ ${quest.questions?.length || 0} Questions`}</p>
+              </div>
+              <button className="delete-btn" onClick={() => handleDeleteQuest(quest._id)}>&times;</button>
+            </div>
+          ))}
+        </div>
       </div>
+      {isModalOpen && (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <button className="close-modal-btn" onClick={closeModal}>&times;</button>
+            {modalView === 'lesson' && (
+              <div className="quest-form-container">
+                <h2>Create New Lesson</h2>
+                <input type="text" placeholder="Lesson Title" value={lessonTitle} onChange={e => setLessonTitle(e.target.value)} />
+                <textarea placeholder="Lesson content..." rows="8" value={lessonContent} onChange={e => setLessonContent(e.target.value)}></textarea>
+                <div className="form-actions"><button onClick={handleSaveLesson}>Save Lesson</button></div>
+              </div>
+            )}
+            {modalView === 'quiz' && (
+              <div className="quest-form-container">
+                <h2>Create New Quiz</h2>
+                <input type="text" placeholder="Quiz Title" value={quizTitle} onChange={e => setQuizTitle(e.target.value)} />
+                {questions.map((q, qIndex) => (
+                  <div key={qIndex} className="quiz-question-builder">
+                    <h4>Question {qIndex + 1}</h4>
+                    <input type="text" placeholder="Question Text" value={q.question_text} onChange={e => handleQuestionChange(qIndex, 'question_text', e.target.value)} />
+                    {q.options.map((opt, oIndex) => (
+                      <div className="quiz-option-builder" key={oIndex}>
+                        <input type="radio" name={`correct_answer_${qIndex}`} checked={q.correct_answer_index === oIndex} onChange={() => handleQuestionChange(qIndex, 'correct_answer_index', oIndex)} />
+                        <input type="text" placeholder={`Option ${oIndex + 1}`} value={opt} onChange={e => handleOptionChange(qIndex, oIndex, e.target.value)} />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                <button className="secondary-btn" onClick={handleAddQuestion}>Add Another Question</button>
+                <div className="form-actions"><button onClick={handleSaveQuiz}>Save Quiz</button></div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-// --- NEW REPORTS PAGE ---
-// In App.jsx, replace the ReportsPage function
 
 function ReportsPage() {
-  const handleDownload = (reportType) => {
-    // We'll connect the 'students' report for now
-    if (reportType !== 'students') {
-      alert(`Downloading ${reportType} report... (This is a placeholder)`);
-      return;
+  const handleDownload = (reportType, filename) => {
+    let url = '';
+    switch (reportType) {
+      case 'students': url = 'http://127.0.0.1:8000/reports/students'; break;
+      case 'quests': url = 'http://127.0.0.1:8000/reports/quests_completion'; break;
+      case 'karma': url = 'http://127.0.0.1:8000/reports/karma'; break;
+      default: return;
     }
-
-    fetch("http://127.0.0.1:8000/reports/students")
-      .then(response => {
-        if (!response.ok) throw new Error("Network response was not ok");
-        return response.blob(); // Get the response as a file Blob
-      })
-      .then(blob => {
-        // Create a temporary URL for the blob
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = 'student_report.csv'; // The filename for the download
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url); // Clean up the URL object
-        a.remove();
-      })
-      .catch(err => console.error('Download error:', err));
+    fetch(url).then(response => response.blob()).then(blob => {
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      a.remove();
+    }).catch(err => console.error('Download error:', err));
   };
-
   return (
     <div className="reports-container">
       <h1>Download Reports</h1>
       <p>Select a report to download it as a CSV file.</p>
       <div className="report-buttons">
-        <button onClick={() => handleDownload('students')}>Download Student Activity Report</button>
-        <button onClick={() => handleDownload('quests')}>Download Quest Completion Report</button>
-        <button onClick={() => handleDownload('karma')}>Download Karma Points Summary</button>
+        <button onClick={() => handleDownload('students', 'student_report.csv')}>Download Student Activity Report</button>
+        <button onClick={() => handleDownload('quests', 'quest_completion_report.csv')}>Download Quest Completion Report</button>
+        <button onClick={() => handleDownload('karma', 'karma_points_summary.csv')}>Download Karma Points Summary</button>
       </div>
     </div>
   );
 }
-// --- NEW PROFILE PAGE ---
+
 function ProfilePage() {
   const [profile, setProfile] = useState({ name: "Aksha", email: "teacher2@test.com" });
   const [isEditing, setIsEditing] = useState(false);
-
-  const handleSave = () => {
-    setIsEditing(false);
-    alert("Profile saved!");
-  };
-
+  const handleSave = () => { setIsEditing(false); alert("Profile saved!"); };
   return (
     <div className="profile-container">
       <h1>Your Profile</h1>
@@ -304,7 +331,6 @@ function ProfilePage() {
     </div>
   );
 }
-
 
 // --- MAIN APP COMPONENT ---
 function App() {
