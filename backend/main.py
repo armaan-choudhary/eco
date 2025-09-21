@@ -1,3 +1,5 @@
+
+# --- Standard and third-party imports ---
 import os
 from datetime import datetime, timedelta
 from typing import Optional, Annotated
@@ -15,7 +17,23 @@ from pymongo import ReturnDocument
 import pymongo.errors
 import re
 from pymongo import MongoClient
+<<<<<<< HEAD
 from fastapi.responses import FileResponse #final response
+=======
+from fastapi.responses import FileResponse
+
+# Helper to convert ObjectId fields to strings recursively
+def fix_object_ids(doc):
+    if isinstance(doc, list):
+        return [fix_object_ids(d) for d in doc]
+    if isinstance(doc, dict):
+        return {k: (str(v) if isinstance(v, ObjectId) else fix_object_ids(v)) for k, v in doc.items()}
+    return doc
+
+# --- Fix: Ensure institute_db and Depends are available everywhere ---
+institute_client = AsyncIOMotorClient(os.getenv('MONGODB_URI', 'mongodb+srv://Admin:BioStorm@sih-project.5u3ahnv.mongodb.net/'))
+institute_db = institute_client["institute"]
+>>>>>>> d14ef8a6e97da6f6e1f20cca4dc58ede9ab8e1ee
 #codebreakfinalboss
 from fastapi.encoders import jsonable_encoder
 from bson import ObjectId
@@ -84,22 +102,12 @@ app.add_middleware(
     allow_headers=["*"],
 ) #mid
 # Endpoint to return both schools and colleges for frontend dropdown
-@app.get("/institutes")
-async def get_institutes():
-    schools = await institute_db.schools.find({}, {"name": 1, "code": 1, "city": 1}).to_list(length=100)
-    for s in schools:
-        s["type"] = "school"
-    colleges = await institute_db.colleges.find({}, {"name": 1, "code": 1, "city": 1}).to_list(length=100)
-    for c in colleges:
-        c["type"] = "college"
-    # Return a single list with type field
-    return [
-        {"id": str(i["_id"]), "name": i.get("name", ""), "code": i.get("code", ""), "city": i.get("city", ""), "type": i["type"]}
-        for i in (schools + colleges)
-    ]
 
-# --- Schools endpoint for frontend dropdown ---
+class QuizSubmitRequest(BaseModel):
+    quiz_id: str
+    answers: list[int]  # index of selected option for each question
 
+<<<<<<< HEAD
 
 # Use a separate Motor client for the 'institute' database
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -175,26 +183,118 @@ async def download_student_report():
     
     return StreamingResponse(output, headers=headers, media_type="text/csv")
 
+=======
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    payload = decode_access_token(token)
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Token payload invalid")
+    try:
+        user_doc = await app.db_auth.users.find_one({"_id": ObjectId(user_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user id in token")
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    return await user_helper(user_doc, app.db_auth)
 
-@app.get("/schools")
-async def get_schools():
-    schools = await institute_db.schools.find({}, {"name": 1, "code": 1, "city": 1}).to_list(length=100)
-    return [{"id": str(s["_id"]), "name": s.get("name", ""), "code": s.get("code", ""), "city": s.get("city", "")} for s in schools]
+# --- Enhanced Quiz Submission with Keechak Maskot Logic ---
+@app.post("/learning/quiz/submit")
+async def submit_quiz(
+    payload: QuizSubmitRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    quiz = await app.db_content.quizzes.find_one({"_id": ObjectId(payload.quiz_id)})
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    questions = quiz.get("questions", [])
+    if len(payload.answers) != len(questions):
+        raise HTTPException(status_code=400, detail="Number of answers does not match number of questions")
+    # Check if already completed (user_quests)
+    already = await app.db_auth.user_quests.find_one({
+        "user_id": ObjectId(current_user["id"]),
+        "quest_id": ObjectId(payload.quiz_id)
+    })
+    if already:
+        raise HTTPException(status_code=400, detail="Quiz already completed")
+>>>>>>> d14ef8a6e97da6f6e1f20cca4dc58ede9ab8e1ee
 
-# CORS - permissive for dev. Lock down in production.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    # Determine if today is a weekend (Saturday=6, Sunday=7)
+    today_weekday = datetime.utcnow().isoweekday()  # 1=Mon, 7=Sun
+    is_weekend = today_weekday in [6, 7]
 
-# Serve static files at /static if public folder exists
-if os.path.isdir("public"):
-    app.mount("/static", StaticFiles(directory="public", html=True), name="static")
+    correct = 0
+    wrong = 0
+    results = []
+    keechak_messages = []
+    for idx, (q, ans) in enumerate(zip(questions, payload.answers)):
+        correct_idx = q.get("answer")
+        is_correct = (ans == correct_idx)
+        if is_correct:
+            correct += 1
+            if is_weekend:
+                keechak_messages.append(f"Q{idx+1}: Correct! Keechak runs away!")
+        else:
+            wrong += 1
+            if is_weekend:
+                keechak_messages.append(f"Q{idx+1}: Wrong! Keechak steals your karma!")
+        results.append({
+            "question": q.get("question"),
+            "selected": ans,
+            "correct": correct_idx,
+            "is_correct": is_correct
+        })
 
-# --------------------------
+    total = len(questions)
+    marks = correct
+    # Store quiz attempt in quiz_history
+    await app.db_auth.quiz_history.insert_one({
+        "user_id": ObjectId(current_user["id"]),
+        "quiz_id": ObjectId(payload.quiz_id),
+        "answers": payload.answers,
+        "results": results,
+        "marks": marks,
+        "total": total,
+        "submitted_at": datetime.utcnow()
+    })
+
+    karma_earned = 0
+    karma_deducted = 0
+    quiz_category = quiz.get('category', 'daily')
+    if quiz_category == 'keechak':
+        # Only deduct karma for wrong answers
+        karma_deducted = wrong * 10
+        if karma_deducted > 0:
+            await app.db_auth.users.update_one(
+                {"_id": ObjectId(current_user["id"])} ,
+                {"$inc": {"karma_points": -karma_deducted}}
+            )
+    else:
+        # Only give karma for correct answers
+        karma_earned = correct * 10
+        if karma_earned > 0:
+            await app.db_auth.users.update_one(
+                {"_id": ObjectId(current_user["id"])} ,
+                {"$inc": {"karma_points": karma_earned}}
+            )
+
+    # Mark quiz as completed in user_quests
+    await app.db_auth.user_quests.insert_one({
+        "user_id": ObjectId(current_user["id"]),
+        "quest_id": ObjectId(payload.quiz_id),
+        "completed_at": datetime.utcnow(),
+        "proof_url": None
+    })
+
+    response = {
+        "marks": marks,
+        "total": total,
+        "results": results,
+        "karma_earned": karma_earned,
+        "karma_deducted": karma_deducted,
+        "keechak_messages": keechak_messages if is_weekend else None
+    }
+    return response
 # DB Connection Status Route
 # --------------------------
 @app.get("/db-status")
@@ -546,10 +646,17 @@ async def login(payload: LoginRequest):
 async def me(current_user: dict = Depends(get_current_user)):
     return current_user
 
+<<<<<<< HEAD
 # Add this new endpoint to your main.py file
 
 # In main.py, replace the old @app.get("/leaderboard") function with this one
 # In main.py, REPLACE your old /students function with this one
+=======
+@app.get("/institutes")
+async def get_institutes():
+    institutes = await app.db_content.institutes.find().to_list(length=100)
+    return {"institutes": fix_object_ids(institutes)}
+>>>>>>> d14ef8a6e97da6f6e1f20cca4dc58ede9ab8e1ee
 
 # In main.py, replace the /students function with this new one
 
@@ -627,8 +734,7 @@ async def get_learning_content(
         "day_id": day_id,
         "type": "lesson"
     }
-    if user_type == "school":
-        lesson_query["level"] = "beginner"
+    # Fetch all levels for the day (beginner, college, advanced)
     lessons = await app.db_content.sections.find(lesson_query).to_list(length=20)
 
     # Fetch quizzes from quizzes collection
@@ -649,13 +755,16 @@ async def get_learning_content(
         l["id"] = str(l["_id"])
         del l["_id"]
     for q in quizzes:
-        q["completed"] = q["_id"] in completed_ids
-        q["id"] = str(q["_id"])
-        del q["_id"]
+           q["completed"] = q["_id"] in completed_ids
+           q["id"] = str(q["_id"])
+           q["type"] = "quiz"
+           q["category"] = "quiz"
+           del q["_id"]
 
     # Combine lessons and quizzes for response
     content = lessons + quizzes
-    return {"week_id": week_id, "day_id": day_id, "content": content}
+
+    return fix_object_ids({"week_id": week_id, "day_id": day_id, "content": content})
 
 # POST /learning/complete - mark lesson/quiz as completed
 class LearningCompleteRequest(BaseModel):
@@ -707,69 +816,8 @@ async def complete_learning_content(
     new_badges = await check_and_award_badges(user_doc, app.db_auth)
     return {"success": True, "karma_earned": points, "new_badges": new_badges}
 
-# --- Quiz Submission and History ---
-class QuizSubmitRequest(BaseModel):
-    quiz_id: str
-    answers: list[int]  # index of selected option for each question
 
-@app.post("/learning/quiz/submit")
-async def submit_quiz(
-    payload: QuizSubmitRequest,
-    current_user: dict = Depends(get_current_user)
-):
-    quiz = await app.db_content.quizzes.find_one({"_id": ObjectId(payload.quiz_id)})
-    if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
-    questions = quiz.get("questions", [])
-    if len(payload.answers) != len(questions):
-        raise HTTPException(status_code=400, detail="Number of answers does not match number of questions")
-    # Check if already completed (user_quests)
-    already = await app.db_auth.user_quests.find_one({
-        "user_id": ObjectId(current_user["id"]),
-        "quest_id": ObjectId(payload.quiz_id)
-    })
-    if already:
-        raise HTTPException(status_code=400, detail="Quiz already completed")
-    correct = 0
-    results = []
-    for idx, (q, ans) in enumerate(zip(questions, payload.answers)):
-        correct_idx = q.get("answer")
-        is_correct = (ans == correct_idx)
-        results.append({
-            "question": q.get("question"),
-            "selected": ans,
-            "correct": correct_idx,
-            "is_correct": is_correct
-        })
-        if is_correct:
-            correct += 1
-    total = len(questions)
-    marks = correct
-    # Store quiz attempt in quiz_history
-    await app.db_auth.quiz_history.insert_one({
-        "user_id": ObjectId(current_user["id"]),
-        "quiz_id": ObjectId(payload.quiz_id),
-        "answers": payload.answers,
-        "results": results,
-        "marks": marks,
-        "total": total,
-        "submitted_at": datetime.utcnow()
-    })
-    # Award +10 karma for each correct answer
-    karma_earned = marks * 10
-    if karma_earned > 0:
-        await app.db_auth.users.update_one(
-            {"_id": ObjectId(current_user["id"])},
-            {"$inc": {"karma_points": karma_earned}}
-        )
-    # Mark quiz as completed in user_quests
-    await app.db_auth.user_quests.insert_one({
-        "user_id": ObjectId(current_user["id"]),
-        "quest_id": ObjectId(payload.quiz_id),
-        "completed_at": datetime.utcnow(),
-        "proof_url": None
-    })
-    return {"marks": marks, "total": total, "results": results, "karma_earned": karma_earned}
+
 
 if __name__ == "__main__":
     import uvicorn
