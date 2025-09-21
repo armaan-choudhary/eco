@@ -1,10 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native'
-import React from 'react'
 
-export default function quests() {
+export default function Quests() {
   return (
     <View>
-      <Text>quests</Text>
+      <Text>Quests</Text>
     </View>
   )
 }

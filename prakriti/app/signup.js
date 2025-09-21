@@ -1,10 +1,15 @@
-import { StyleSheet, Text, View } from 'react-native'
-import React from 'react'
+import { StyleSheet, Text, View, Pressable } from 'react-native'
+import { useRouter } from 'expo-router'
 
-export default function signup() {
+export default function Signup() {
+  const router = useRouter();
+
   return (
-    <View>
-      <Text>signup</Text>
+    <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}} >
+      <Text>Signup</Text>
+      <Pressable onPress={() => router.replace('/')}>
+        <Text>back</Text>
+      </Pressable>
     </View>
   )
 }

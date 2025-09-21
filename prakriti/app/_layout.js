@@ -5,12 +5,11 @@ import * as Font from 'expo-font';
 import * as Nav from 'expo-navigation-bar';
 
 export default function Layout() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false); // Mock login state
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
 
   useEffect(() => {
     async function setup() {
-      // navigation bar calls can fail when edge-to-edge is enabled — guard them
       if (Platform.OS === 'android') {
         try {
           await Nav.setBehaviorAsync('overlay-swipe');
@@ -42,18 +41,19 @@ export default function Layout() {
   }, []);
 
   if (!fontsLoaded) {
-    return null; // Or a loading spinner
+    return null;
   }
 
   return (
-    <Stack>
+    <Stack screenOptions={{ headerShown: false }}>
       {!isLoggedIn ? (
-        <Stack.Screen name="login" options={{ headerShown: false }} />
+        <>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="login" />
+          <Stack.Screen name="signup" />
+        </>
       ) : (
-        <Stack.Screen
-          name="(tabs)"
-          options={{ headerShown: false }} // Tabs handle their own headers
-        />
+        <Stack.Screen name="(tabs)" />
       )}
     </Stack>
   );

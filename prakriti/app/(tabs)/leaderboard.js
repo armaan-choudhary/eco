@@ -1,10 +1,10 @@
 import { StyleSheet, Text, View } from 'react-native'
 import React from 'react'
 
-export default function leaderboard() {
+export default function Leaderboard() {
   return (
     <View>
-      <Text>leaderboard</Text>
+      <Text>Leaderboard</Text>
     </View>
   )
 }
