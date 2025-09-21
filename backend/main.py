@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional, Annotated
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
@@ -15,8 +15,17 @@ from pymongo import ReturnDocument
 import pymongo.errors
 import re
 from pymongo import MongoClient
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse #final response
 #codebreakfinalboss
+from fastapi.encoders import jsonable_encoder
+from bson import ObjectId
+# At the top of main.py, add these imports
+import io
+import csv
+from fastapi.responses import StreamingResponse
+
+# This line teaches FastAPI how to convert ObjectId to a string for JSON
+
 
 # --------------------------
 # Configuration (env vars)
@@ -73,7 +82,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-)  #new
+) #mid
 # Endpoint to return both schools and colleges for frontend dropdown
 @app.get("/institutes")
 async def get_institutes():
@@ -91,10 +100,39 @@ async def get_institutes():
 
 # --- Schools endpoint for frontend dropdown ---
 
+
 # Use a separate Motor client for the 'institute' database
 from motor.motor_asyncio import AsyncIOMotorClient
 institute_client = AsyncIOMotorClient(MONGODB_URI)
 institute_db = institute_client["institute"]
+
+# In main.py, add this Pydantic model near your other models
+class QuestCreate(BaseModel):
+    title: str
+    description: str
+
+# Add these three new endpoints to main.py
+@app.get("/quests")
+async def get_all_quests():
+    # Use db_content to store quests
+    quests_collection = client[MONGO_DB_NAME_CONTENT]['quests']
+    quests = await quests_collection.find({}).to_list(length=100)
+    return quests
+
+@app.post("/quests")
+async def create_quest(quest: QuestCreate):
+    quests_collection = client[MONGO_DB_NAME_CONTENT]['quests']
+    new_quest = await quests_collection.insert_one(quest.dict())
+    created_quest = await quests_collection.find_one({"_id": new_quest.inserted_id})
+    return created_quest
+
+@app.delete("/quests/{quest_id}")
+async def delete_quest(quest_id: str):
+    quests_collection = client[MONGO_DB_NAME_CONTENT]['quests']
+    delete_result = await quests_collection.delete_one({"_id": ObjectId(quest_id)})
+    if delete_result.deleted_count == 1:
+        return {"status": "success", "message": "Quest deleted"}
+    raise HTTPException(status_code=404, detail="Quest not found")
 
 # API endpoint for the Quests report
 @app.get("/reports/quests")
@@ -106,13 +144,37 @@ def get_quests_report():
         f.write("1, Active\n")
         f.write("2, Completed\n")
     return FileResponse(path=file_path, filename="quests_report.txt", media_type="text/plain")
-@app.get("/students")
-def get_students():
-    # We will use your existing client to connect to the database
-    db_auth = app.mongodb_client[MONGO_DB_NAME_AUTH]
-    students_collection = db_auth['students']
-    students_list = list(students_collection.find({}, {'_id': 0}))
-    return students_list
+# In main.py, replace the old @app.get("/students") function with this one
+
+# In main.py, add this new endpoint
+
+@app.get("/reports/students")
+async def download_student_report():
+    students = await db_auth.users.find({}).to_list(length=None) # Get all users
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Write the header row
+    writer.writerow(["ID", "Name", "Email", "Karma Points"])
+    
+    # Write data rows
+    for student in students:
+        writer.writerow([
+            str(student["_id"]),
+            student.get("name"),
+            student.get("email"),
+            student.get("karma_points", 0)
+        ])
+    
+    output.seek(0) # Go to the beginning of the StringIO buffer
+    
+    headers = {
+        "Content-Disposition": "attachment; filename=student_report.csv"
+    }
+    
+    return StreamingResponse(output, headers=headers, media_type="text/csv")
+
 
 @app.get("/schools")
 async def get_schools():
@@ -484,13 +546,54 @@ async def login(payload: LoginRequest):
 async def me(current_user: dict = Depends(get_current_user)):
     return current_user
 
+# Add this new endpoint to your main.py file
 
+# In main.py, replace the old @app.get("/leaderboard") function with this one
+# In main.py, REPLACE your old /students function with this one
 
-# --------------------------
-# Learning Content Endpoints
-# --------------------------
-from fastapi import Query
-from typing import List
+# In main.py, replace the /students function with this new one
+
+@app.get("/students")
+async def get_students():
+    try:
+        students_collection = app.db_auth['users']
+        students_list = await students_collection.find({}).to_list(length=100)
+        
+        response = []
+        for student in students_list:
+            response.append({
+                "id": str(student['_id']),
+                "name": student.get("name", "No Name"),
+                "karma_points": student.get("karma_points", 0),
+                "badges": student.get("badges", []) 
+            })
+        return response
+    except Exception as e:
+        # This will print a clear error in your backend terminal if something goes wrong
+        print(f"!!! ERROR IN /students ENDPOINT: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching students from database.")
+# Also, REPLACE your old /leaderboard function with this one
+
+@app.get("/leaderboard")
+async def get_leaderboard():
+    """
+    Fetches the top 10 users sorted by karma_points.
+    """
+    leaderboard_users = await app.db_auth.users.find({}, {"name": 1, "karma_points": 1}) \
+                                             .sort("karma_points", -1) \
+                                             .limit(10) \
+                                             .to_list(length=10)
+    
+    # Manually format the response to be safe
+    response = [
+        {
+            "id": str(user["_id"]),
+            "name": user.get("name", "Unnamed User"),
+            "karma_points": user.get("karma_points", 0)
+        }
+        for user in leaderboard_users
+    ]
+    return response
 
 # GET /learning/content - fetch current lessons/quizzes for user (by week, day, school)
 @app.get("/learning/content")
