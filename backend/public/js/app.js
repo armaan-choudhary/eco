@@ -209,8 +209,15 @@ async function loadLearningContent() {
             return;
         }
         list.innerHTML = data.content.map(item => {
+            let heading = item.title;
+            if (!heading) {
+                // Compose heading from level and type if title is missing
+                let lvl = item.level ? item.level.charAt(0).toUpperCase() + item.level.slice(1) : '';
+                let typ = item.type ? item.type.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
+                heading = [lvl, typ].filter(Boolean).join(' - ') || 'Untitled';
+            }
             let html = `<div class="card" style="margin-bottom:12px;">
-                <strong>${item.title || 'Untitled'}</strong>`;
+                <strong>${heading}</strong>`;
             if (item.category === 'quiz') {
                 html += ` <span class="muted small">(Quiz)</span>`;
             } else if (item.category) {
@@ -322,6 +329,23 @@ async function loadLearningContent() {
                         if (karmaEl) {
                             const prev = parseInt(karmaEl.innerText) || 0;
                             karmaEl.innerText = prev + data.karma_earned;
+                        }
+                    }
+                    // Show Keechak maskot if it's weekend and karma was deducted or earned
+                    if (Array.isArray(data.keechak_messages) && data.keechak_messages.length > 0) {
+                        const maskot = document.getElementById('keechak-maskot');
+                        const msgDiv = document.getElementById('keechak-message');
+                        const img = document.getElementById('keechak-img');
+                        msgDiv.innerHTML = data.keechak_messages.map(m => `<div>${m}</div>`).join('');
+                        maskot.style.display = 'flex';
+                        // Animate Keechak: shake if karma deducted, bounce if correct
+                        if ((data.karma_deducted||0) > 0) {
+                            img.style.transform = 'translateX(-10px) rotate(-10deg)';
+                            setTimeout(()=>{ img.style.transform = 'translateX(10px) rotate(10deg)'; }, 200);
+                            setTimeout(()=>{ img.style.transform = 'translateX(0)'; }, 400);
+                        } else {
+                            img.style.transform = 'scale(1.15)';
+                            setTimeout(()=>{ img.style.transform = 'scale(1)'; }, 400);
                         }
                     }
                     setMsg('Quiz submitted! Marks: ' + data.marks + ' / ' + data.total + karmaMsg, true);

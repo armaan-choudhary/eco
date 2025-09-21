@@ -23,3 +23,31 @@ button{background:var(--accent);color:white;border:0;padding:10px 14px;border-ra
 .msg.ok{background:#f0fff4;color:#075e28;border:1px solid #bfe8c9}
 .karmab{background:#fff;padding:12px;border-radius:10px;margin-top:10px;display:inline-block}
 .btn-logout{background:#c0392b}
+
+/* Keechak maskot modal */
+#keechak-maskot {
+	display: none;
+	align-items: center;
+	justify-content: center;
+	position: fixed;
+	left: 0; top: 0; width: 100vw; height: 100vh;
+	background: rgba(0,0,0,0.3);
+	z-index: 9999;
+}
+#keechak-maskot img {
+	width: 120px;
+	height: auto;
+	margin: 0 auto 12px;
+	display: block;
+	transition: transform 0.5s;
+}
+#keechak-maskot button {
+	margin-top: 10px;
+	padding: 8px 18px;
+	border-radius: 8px;
+	background: #2b8a3e;
+	color: #fff;
+	border: none;
+	cursor: pointer;
+	font-size: 16px;
+}
