@@ -17,6 +17,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+import io
+import csv
+from fastapi.responses import StreamingResponse
+
 
 # --------------------------
 # Configuration
@@ -335,6 +339,99 @@ async def get_institutes():
         {"id": str(c["_id"]), "name": c.get("name", ""), "code": c.get("code", ""), "city": c.get("city", ""), "type": "college"} for c in colleges
     ])
     return result
+
+
+# --- Imports for Report Downloading (add these to the top of your file) ---
+
+
+# --- Pydantic Model for Quest Creation (add this with your other models) ---
+class QuestCreate(BaseModel):
+    title: str
+    description: str
+
+# --- Endpoints for Teacher Portal (add these with your other endpoints) ---
+
+@app.get("/students")
+async def get_students():
+    """Fetches all users from the database for the Students page."""
+    students_list = await app.db_auth.users.find({}).to_list(length=None)
+    
+    response = []
+    for student in students_list:
+        clean_student = {
+            "id": str(student['_id']),
+            "name": student.get("name"),
+            "karma_points": student.get("karma_points", 0),
+            "badges": student.get("badges", [])
+        }
+        response.append(clean_student)
+        
+    return response
+
+@app.get("/leaderboard")
+async def get_leaderboard():
+    """Fetches the top 10 users sorted by karma points."""
+    leaderboard_users = await app.db_auth.users.find({}, {"name": 1, "karma_points": 1}) \
+                                             .sort("karma_points", -1) \
+                                             .limit(10) \
+                                             .to_list(length=10)
+    
+    response = [
+        {
+            "id": str(user["_id"]),
+            "name": user.get("name", "Unnamed User"),
+            "karma": user.get("karma_points", 0)
+        }
+        for user in leaderboard_users
+    ]
+    return response
+
+@app.get("/quests")
+async def get_all_quests():
+    """Fetches all created quests from the database."""
+    quests_collection = app.db_content['quests']
+    quests = await quests_collection.find({}).to_list(length=100)
+    return quests
+
+@app.post("/quests")
+async def create_quest(quest: QuestCreate):
+    """Creates a new quest and saves it to the database."""
+    quests_collection = app.db_content['quests']
+    new_quest_data = quest.model_dump()
+    result = await quests_collection.insert_one(new_quest_data)
+    created_quest = await quests_collection.find_one({"_id": result.inserted_id})
+    return created_quest
+
+@app.delete("/quests/{quest_id}")
+async def delete_quest(quest_id: str):
+    """Deletes a quest from the database by its ID."""
+    quests_collection = app.db_content['quests']
+    delete_result = await quests_collection.delete_one({"_id": ObjectId(quest_id)})
+    if delete_result.deleted_count == 1:
+        return {"status": "success", "message": "Quest deleted"}
+    raise HTTPException(status_code=404, detail="Quest not found")
+
+@app.get("/reports/students")
+async def download_student_report():
+    """Generates and returns a CSV file of all students."""
+    students = await app.db_auth.users.find({}).to_list(length=None)
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    writer.writerow(["ID", "Name", "Email", "Karma Points"]) # Header
+    
+    for student in students:
+        writer.writerow([
+            str(student["_id"]),
+            student.get("name"),
+            student.get("email"),
+            student.get("karma_points", 0)
+        ])
+    
+    output.seek(0)
+    headers = {"Content-Disposition": "attachment; filename=student_report.csv"}
+    return StreamingResponse(output, headers=headers, media_type="text/csv")
 
 @app.get("/learning/content")
 async def get_learning_content(
