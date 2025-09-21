@@ -448,60 +448,74 @@ async def download_student_report():
 @app.get("/learning/content")
 async def get_learning_content(
     current_user: dict = Depends(get_current_user),
-    week_id: str = Query(None),
-    day_id: int = Query(None)
+    week_id: str = Query(None, description="Optional week ID to query a specific week."),
+    day_id: int = Query(None, description="Optional day ID (1-7) to query a specific day.")
 ):
+    """
+    Fetches the learning content (from sections) and the daily quiz for a given day.
+    If week_id or day_id are not provided, it defaults to the current day.
+    """
     now_utc = datetime.utcnow()
 
-    # Determine week_id for context
+    # 1. Determine the week_id if not provided
     if not week_id:
-        week = await app.db_content.weeks.find_one({
+        # Find the currently active week
+        current_week = await app.db_content.weeks.find_one({
             "start_date": {"$lte": now_utc},
             "end_date": {"$gte": now_utc}
         })
-        if not week:
-            raise HTTPException(status_code=404, detail="No active week found for today")
-        week_id = str(week["_id"])
-    
+        if not current_week:
+            raise HTTPException(status_code=404, detail="No active learning week found for the current date.")
+        week_id = str(current_week["_id"])
+
+    # 2. Determine the day_id if not provided
     if not day_id:
-        # ISO weekday: Monday=1 ... Sunday=7
+        # Default to the current day of the week (Monday=1, ..., Sunday=7) in the Indian timezone
         day_id = datetime.now(pytz.timezone("Asia/Kolkata")).isoweekday()
 
-    # Fetch only today's quizzes
-    quizzes = await app.db_content.quizzes.find({"day_id": day_id}).to_list(length=None)
+    # 3. Fetch both sections (content) and the quiz for the determined day_id
+    sections_cursor = app.db_content.sections.find({"day_id": day_id})
+    quiz_doc = await app.db_content.quizzes.find_one({"day_id": day_id})
+    
+    # Convert cursor to a list
+    sections = await sections_cursor.to_list(length=None)
 
-    if not quizzes:
-        raise HTTPException(status_code=404, detail="No learning content for today")
+    # 4. Check if any content was found
+    if not sections and not quiz_doc:
+        raise HTTPException(status_code=404, detail=f"No learning content or quiz found for day {day_id}.")
 
-    # ObjectId → str converter
-    def convert_object_ids(obj):
-        if isinstance(obj, list):
-            return [convert_object_ids(x) for x in obj]
-        elif isinstance(obj, dict):
-            return {k: convert_object_ids(v) for k, v in obj.items()}
-        elif isinstance(obj, ObjectId):
-            return str(obj)
-        else:
-            return obj
+    # 5. Format the response
+    # Format the learning content
+    content_response = []
+    for sec in sections:
+        content_response.append({
+            "id": str(sec["_id"]),
+            "level": sec.get("level", "general"),
+            "title": sec.get("title", "No Title"),
+            "content": sec.get("content", "No content available.")
+        })
 
-    quiz_list = []
-    for quiz in quizzes:
-        quiz_obj = {
-            "id": str(quiz["_id"]),
-            "title": quiz.get("title", "Untitled Quiz"),
-            "questions": []
+    # Format the quiz, if it exists
+    quiz_response = None
+    if quiz_doc:
+        quiz_response = {
+            "id": str(quiz_doc["_id"]),
+            "title": quiz_doc.get("title", "Daily Quiz"),
+            "questions": [
+                {
+                    "question": q.get("question"),
+                    "options": q.get("options", [])
+                    # Note: We are not sending the 'correct_answer' to the client
+                } for q in quiz_doc.get("questions", [])
+            ]
         }
-        for q in quiz.get("questions", []):
-            quiz_obj["questions"].append({
-                "question": q.get("question"),
-                "options": q.get("options", [])
-            })
-        quiz_list.append(convert_object_ids(quiz_obj))
 
+    # 6. Return the combined data
     return {
         "week_id": week_id,
         "day_id": day_id,
-        "quizzes": quiz_list
+        "content": content_response,
+        "quiz": quiz_response
     }
 
 

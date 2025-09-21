@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -6,89 +7,107 @@ import {
     Dimensions,
     TouchableOpacity,
     StyleSheet,
-} from 'react-native'
-import { useRouter } from 'expo-router'
-import SpeechBubble from './components/SpeechBubble'
+    ActivityIndicator,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import SpeechBubble from './components/SpeechBubble';
 
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window')
-
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function Index() {
-    const router = useRouter()
+    const router = useRouter();
+    const [isLoading, setIsLoading] = useState(true);
 
-    const logoSource = require('../assets/images/prakriti-logo.png')
-    const bgSource = require('../assets/images/bg.png')
+    useEffect(() => {
+        const checkLoginState = async () => {
+            try {
+                const token = await AsyncStorage.getItem('userToken');
+                if (token) {
+                    router.replace('/dashboard');
+                } else {
+                    setIsLoading(false);
+                }
+            } catch (error) {
+                console.error('Failed to load token from storage', error);
+                setIsLoading(false);
+            }
+        };
 
-    const logoWidth = Math.round(SCREEN_WIDTH * 0.35)
-    const asset = Image.resolveAssetSource(logoSource)
-    const logoHeight = Math.round((asset.height / asset.width) * logoWidth)
+        checkLoginState();
+    }, []);
 
-    const keechakAsset = Image.resolveAssetSource(require('../assets/images/keechak.png'))
+    const logoSource = require('../assets/images/prakriti-logo.png');
+    const bgSource = require('../assets/images/bg.png');
+    const keechakSource = require('../assets/images/keechak.png');
+    const rocksSource = require('../assets/images/rocks.png');
+
+    const logoWidth = Math.round(SCREEN_WIDTH * 0.35);
+    const asset = Image.resolveAssetSource(logoSource);
+    const logoHeight = Math.round((asset.height / asset.width) * logoWidth);
+
+    const keechakAsset = Image.resolveAssetSource(keechakSource);
     const keechakHeight = Math.round(
         (keechakAsset.height / keechakAsset.width) * SCREEN_WIDTH * 0.6
-    )
-    const keechakWidth = SCREEN_WIDTH
+    );
+    const keechakWidth = SCREEN_WIDTH;
 
-    const rocksSource = require('../assets/images/rocks.png')
-    const rocksAsset = Image.resolveAssetSource(rocksSource)
-    const rocksWidth = SCREEN_WIDTH
-    const rocksHeight = Math.round((rocksAsset.height / rocksAsset.width) * rocksWidth)
+    const rocksAsset = Image.resolveAssetSource(rocksSource);
+    const rocksWidth = SCREEN_WIDTH;
+    const rocksHeight = Math.round((rocksAsset.height / rocksAsset.width) * rocksWidth);
 
+    if (isLoading) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'black' }}>
+                <ActivityIndicator size="large" color="#fff" />
+            </View>
+        );
+    }
 
     return (
         <ImageBackground source={bgSource} style={styles.background} resizeMode="cover">
-
             <Image
                 source={logoSource}
                 style={[styles.logo, { width: logoWidth, height: logoHeight }]}
                 resizeMode="contain"
             />
-
             <View style={{ width: SCREEN_WIDTH, alignItems: 'center' }} pointerEvents="box-none">
                 <View style={{ width: SCREEN_WIDTH, alignItems: 'center' }}>
                     <SpeechBubble>I've been waiting for you...</SpeechBubble>
-
                     <Image
-                        source={require('../assets/images/keechak.png')}
+                        source={keechakSource}
                         style={[{ width: keechakWidth, height: keechakHeight }, styles.keechak]}
                         resizeMode="contain"
                         pointerEvents="none"
                     />
                 </View>
-
                 <TouchableOpacity
-                    onPress={() => router.replace('/login')}
+                    onPress={() => router.replace('/signup')}
                     style={styles.loginBtn}
                     activeOpacity={0.75}
                 >
                     <Text style={styles.loginText}>Get Started</Text>
                 </TouchableOpacity>
-
             </View>
-
             <Image
                 source={rocksSource}
                 style={[styles.rocks, { width: rocksWidth, height: rocksHeight }]}
                 resizeMode="contain"
             />
-
             <TouchableOpacity
-                onPress={() => router.replace('/signup')}
+                onPress={() => router.replace('/login')}
                 style={styles.signupBtn}
                 activeOpacity={0.75}
             >
                 <Text style={styles.signupText}>Already have an account?</Text>
             </TouchableOpacity>
-
         </ImageBackground>
-    )
+    );
 }
-
 
 const styles = StyleSheet.create({
     background: {
-        minHeight: '100%',
+        flex: 1,
         backgroundColor: 'black',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -96,13 +115,6 @@ const styles = StyleSheet.create({
         position: 'relative',
     },
     logo: {
-        margin: 0,
-        padding: 0,
-    },
-    text: {
-        color: 'white',
-        fontFamily: 'Modak-Regular',
-        fontSize: 24,
         margin: 0,
         padding: 0,
     },
@@ -152,4 +164,4 @@ const styles = StyleSheet.create({
         alignSelf: 'center',
         zIndex: 1,
     },
-})
+});

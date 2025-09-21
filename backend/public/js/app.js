@@ -203,98 +203,83 @@ async function loadLearningContent() {
             headers: { 'Authorization': 'Bearer ' + t }
         });
         const data = await res.json();
+
+        console.log('%c[TESTING] Data from /learning/content:', 'color: blue; font-weight: bold;', data);
+
         if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
-        if (!data.content || !data.content.length) {
-            list.innerHTML = '<div>No learning content for today.</div>';
+        
+        const allContent = [];
+        if (data.content && Array.isArray(data.content)) {
+            allContent.push(...data.content);
+        }
+        if (data.quiz) {
+            const quizItem = {
+                id: data.quiz.id,
+                title: data.quiz.title,
+                questions: data.quiz.questions,
+                category: 'quiz',
+                points: 10 
+            };
+            allContent.push(quizItem);
+        }
+
+        if (allContent.length === 0) {
+            list.innerHTML = '<div>No learning content or quizzes for today.</div>';
             return;
         }
-        list.innerHTML = data.content.map(item => {
-            let heading = item.title;
-            if (!heading) {
-                // Compose heading from level and type if title is missing
-                let lvl = item.level ? item.level.charAt(0).toUpperCase() + item.level.slice(1) : '';
-                let typ = item.type ? item.type.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
-                heading = [lvl, typ].filter(Boolean).join(' - ') || 'Untitled';
-            }
+
+        list.innerHTML = allContent.map(item => {
+            let heading = item.title || 'Untitled';
+            
             let html = `<div class="card" style="margin-bottom:12px;">
                 <strong>${heading}</strong>`;
+
             if (item.category === 'quiz') {
                 html += ` <span class="muted small">(Quiz)</span>`;
-            } else if (item.category) {
-                html += ` <span class="muted small">(${item.category})</span>`;
-            }
-            html += '<br/>';
-            html += `<span>${item.description || ''}</span><br/>`;
-            // Show karma earned for completed quizzes, else show static points
-            if (item.category === 'quiz' && item.completed) {
-                // We'll fetch the user's quiz history for this quiz to get karma earned
-                html += `<span class="muted small" id="quiz-karma-earned-${item.id}">Karma Earned: ...</span><br/>`;
-            } else {
-                html += `<span class="muted small">Points: ${item.points || 0}</span><br/>`;
-            }
-            if (item.category === 'quiz' && Array.isArray(item.questions)) {
-                // MCQ UI
+                html += `<br/><span class="muted small">Points: ${item.points || 0}</span><br/>`;
+
                 if (item.completed) {
                     html += `<div class='quiz-result' style='color:green;font-weight:bold'>Completed</div>`;
-                    // Optionally, show answers/results if you want
                 } else {
                     html += `<form class="quiz-form" data-quiz-id="${item.id}">`;
                     item.questions.forEach((q, idx) => {
                         html += `<div style="margin:6px 0"><b>Q${idx+1}:</b> ${q.question}<br/>`;
-                        if (q.options) {
-                            if (Array.isArray(q.options)) {
-                                q.options.forEach((opt, i) => {
-                                    html += `<label style='margin-right:12px;'><input type='radio' name='q${idx}' value='${i}'> ${String.fromCharCode(65+i)}: ${opt}</label>`;
-                                });
-                            } else if (typeof q.options === 'object') {
-                                Object.entries(q.options).forEach(([k,v], i) => {
-                                    html += `<label style='margin-right:12px;'><input type='radio' name='q${idx}' value='${k}'> ${k}: ${v}</label>`;
-                                });
-                            }
+                        if (q.options && Array.isArray(q.options)) {
+                            q.options.forEach((opt, i) => {
+                                // CHANGE 1: The 'value' is now the index 'i'
+                                html += `<label style='margin-right:12px;'><input type='radio' name='q${idx}' value='${i}'> ${String.fromCharCode(65+i)}: ${opt}</label>`;
+                            });
                         }
                         html += '</div>';
                     });
-                    html += `<button type='submit' class='btn-submit-quiz' data-quiz-id='${item.id}'>Submit Quiz</button>`;
+                    html += `<button type='submit' class='btn-submit-quiz'>Submit Quiz</button>`;
                     html += `</form>`;
                     html += `<div class='quiz-result' id='quiz-result-${item.id}'></div>`;
                 }
-            }
-        // For completed quizzes, fetch and display karma earned
-        data.content.forEach(item => {
-            if (item.category === 'quiz' && item.completed) {
-                // Fetch quiz history for this quiz and user
-                fetch(`${BACKEND_URL}/learning/quiz/history?quiz_id=${item.id}`, {
-                    headers: { 'Authorization': 'Bearer ' + token.get() }
-                })
-                .then(res => res.json())
-                .then(hist => {
-                    if (hist && typeof hist.karma_earned === 'number') {
-                        const el = document.getElementById('quiz-karma-earned-' + item.id);
-                        if (el) el.innerText = `Karma Earned: ${hist.karma_earned}`;
-                    }
-                });
-            }
-        });
-            if (item.completed && item.category !== 'quiz') {
-                html += '<span style="color:green;font-weight:bold">Completed</span>';
-            } else if (item.category !== 'quiz') {
-                html += `<button class="btn-complete-learning" data-id="${item.id}">Mark as Completed</button>`;
+            } else { 
+                html += ` <span class="muted small">(${item.level || 'Lesson'})</span>`;
+                html += `<div style="margin-top: 8px;">${item.content || ''}</div>`;
+                if (item.completed) {
+                    html += '<span style="color:green;font-weight:bold; margin-top: 8px; display:inline-block;">Completed</span>';
+                } else {
+                    html += `<button class="btn-complete-learning" data-id="${item.id}" style="margin-top: 8px;">Mark as Completed</button>`;
+                }
             }
             html += '</div>';
             return html;
         }).join('');
 
-        // Attach MCQ quiz submit listeners
         document.querySelectorAll('.quiz-form').forEach(form => {
             form.onsubmit = async function(e) {
                 e.preventDefault();
                 const quizId = this.getAttribute('data-quiz-id');
                 const answers = [];
-                const questions = this.querySelectorAll('div');
+                const questions = this.querySelectorAll('div[style="margin:6px 0"]');
                 let allAnswered = true;
                 questions.forEach((qDiv, idx) => {
                     const selected = qDiv.querySelector('input[type=radio]:checked');
                     if (selected) {
+                        // CHANGE 2: Convert the value to a Number
                         answers.push(Number(selected.value));
                     } else {
                         allAnswered = false;
@@ -315,70 +300,18 @@ async function loadLearningContent() {
                     });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
-                    // Show result
-                    const resultDiv = document.getElementById('quiz-result-' + quizId);
-                    resultDiv.innerHTML = `<b>Result:</b> ${data.marks} / ${data.total} correct`;
-                    data.results.forEach((r, idx) => {
-                        resultDiv.innerHTML += `<br>Q${idx+1}: ${r.is_correct ? '<span style="color:green">Correct</span>' : '<span style="color:red">Wrong</span>'}`;
-                    });
-                    let karmaMsg = '';
-                    if (typeof data.karma_earned === 'number' && data.karma_earned > 0) {
-                        karmaMsg = ` (+${data.karma_earned} karma)`;
-                        // Update karma value in dashboard in real time
-                        const karmaEl = document.getElementById('karma-value');
-                        if (karmaEl) {
-                            const prev = parseInt(karmaEl.innerText) || 0;
-                            karmaEl.innerText = prev + data.karma_earned;
-                        }
-                    }
-                    // Show Keechak maskot if it's weekend and karma was deducted or earned
-                    if (Array.isArray(data.keechak_messages) && data.keechak_messages.length > 0) {
-                        const maskot = document.getElementById('keechak-maskot');
-                        const msgDiv = document.getElementById('keechak-message');
-                        const img = document.getElementById('keechak-img');
-                        msgDiv.innerHTML = data.keechak_messages.map(m => `<div>${m}</div>`).join('');
-                        maskot.style.display = 'flex';
-                        // Animate Keechak: shake if karma deducted, bounce if correct
-                        if ((data.karma_deducted||0) > 0) {
-                            img.style.transform = 'translateX(-10px) rotate(-10deg)';
-                            setTimeout(()=>{ img.style.transform = 'translateX(10px) rotate(10deg)'; }, 200);
-                            setTimeout(()=>{ img.style.transform = 'translateX(0)'; }, 400);
-                        } else {
-                            img.style.transform = 'scale(1.15)';
-                            setTimeout(()=>{ img.style.transform = 'scale(1)'; }, 400);
-                        }
-                    }
-                    setMsg('Quiz submitted! Marks: ' + data.marks + ' / ' + data.total + karmaMsg, true);
-                    // After submission, reload content to mark as completed and disable further changes
-                    await loadLearningContent();
+                    setMsg('Quiz submitted!', true);
+                    await loadLearningContent(); 
+                    await loadProfile(); 
                 } catch (err) {
                     setMsg('Could not submit quiz: ' + err.message, false);
                 }
             };
         });
-        // Attach event listeners for completion
+
         document.querySelectorAll('.btn-complete-learning').forEach(btn => {
             btn.onclick = async function() {
-                const questId = this.getAttribute('data-id');
-                this.disabled = true;
-                this.innerText = 'Submitting...';
-                try {
-                    const res = await fetch(BACKEND_URL + '/learning/complete', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': 'Bearer ' + t,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ quest_id: questId })
-                    });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
-                    setMsg('Marked as completed! +' + (data.karma_earned || 0) + ' karma.', true);
-                    await loadLearningContent();
-                    await loadProfile(); // Refresh profile for karma/badges
-                } catch (err) {
-                    setMsg('Could not mark as completed: ' + err.message, false);
-                }
+                setMsg('Feature to mark lessons complete is not yet implemented.', false);
             };
         });
     } catch (err) {
