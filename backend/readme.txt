@@ -16,6 +16,7 @@ Steps to test/run the program.
 4   open http://localhost:8080/
 
 
+
 ============================
 Karma Points System
 ============================
@@ -23,6 +24,15 @@ Karma Points System
 - Signup Bonus: Every new user receives +50 karma upon account creation.
 - Daily Login Bonus: +5 karma is automatically awarded for the first login each day.
 
+Quiz Karma Logic:
+- Daily Quizzes (`category: 'daily'`):
+    - Users earn +10 karma for each correct answer.
+    - No karma is deducted for wrong answers.
+- Keechak Quizzes (`category: 'keechak'`):
+    - Users lose 10 karma for each wrong answer.
+    - No karma is awarded for correct answers.
+
+Karma is updated immediately after quiz submission, and the results (karma earned/deducted) are shown to the user.
 
 
 ============================
