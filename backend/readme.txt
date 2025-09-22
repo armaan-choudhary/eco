@@ -2,8 +2,10 @@ Steps to test/run the program.
 
 0   create a .env fike in the root directory of BACKEND and paste the following code
     # MongoDB Configuration
-    MONGODB_URI="mongodb+srv://Brave:Ug1mbn5T8ALfHLgS@auth.fzjv1an.mongodb.net/"
-    MONGO_DB_NAME="Auth"
+    MONGODB_URI="mongodb+srv://Admin:BioStorm@sih-project.5u3ahnv.mongodb.net/"
+    MONGO_DB_NAME="Keechak"
+    MONGO_DB_NAME="prakriti_content"
+    MONGO_DB_NAME="institute"
 
     # JWT (JSON Web Token) Configuration
     JWT_SECRET_KEY="c891b7e4a187b629088a2a05d8091a18c8b4a24208a0d2a84e3a097d91e63a1f"
